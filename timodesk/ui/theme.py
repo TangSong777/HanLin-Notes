@@ -1,102 +1,76 @@
-"""HanLin-Notes 的视觉主题。
-
-黑白灰为主：浅灰画布上浮着圆角卡片，接近黑文字、极淡分隔线。
-质感来自三层：画布底色 → 卡片（1px 边 + 柔和投影）→ 卡片内部控件。
-强调色就是黑本身（主按钮黑底白字），不引入彩色主题。
-笔记的颜色标记（NOTE_COLORS）按黑白灰阶保留，属于内容不属于皮肤。
-
-支持两套皮肤：light / dark，运行时用 set_mode() 切换，C 是原地更新的字典，
-各模块 `from .theme import C` 拿到的引用会跟着变。
-"""
+"""HanLin-Notes 的浅色、深色配色与控件样式。"""
 from __future__ import annotations
 
+from PyQt5.QtCore import QPointF, QRectF, Qt
+from PyQt5.QtGui import QColor, QPainter, QPen, QPolygonF
+from PyQt5.QtWidgets import QProxyStyle, QStyle
+
 LIGHT = {
-    # 画布与卡片
-    "canvas": "#f1f1f2",
-    "titlebar": "#ffffff",
-    "sidebar": "#fafafb",
-    "paper": "#ffffff",
-    "paper_alt": "#fafafb",
-    "card": "#ffffff",
-    "card_soft": "#fbfbfc",
-    "card_hover": "#f8f8fa",
-    "card_border": "#ececee",
-    "card_border_strong": "#dedee2",
-    # 文字
-    "ink": "#1d1d1f",
-    "ink_soft": "#3a3a3c",
-    "muted": "#86868b",
-    "faint": "#a8a8ad",
-    "on_ink": "#ffffff",
-    # 分隔
-    "line": "#ececee",
-    "line_soft": "#f4f4f6",
-    # 控件状态
-    "input_bg": "#f4f4f5",
-    "hover_bg": "#f1f1f3",
-    "press_bg": "#dcdce0",
-    "checked_bg": "#e6e6e9",
-    "sel_bg": "#d9d9dd",
-    "wall_hover": "#f4f4f6",
-    "wall_sel": "#eaeaec",
-    "btn_hover": "#000000",
-    "btn_press": "#333333",
-    "close_hover": "#2e2e2e",
-    "hl_bg": "#d0d0d0",
-    "scroll": "#d8d8dc",
-    "scroll_hover": "#bdbdc4",
-    # 强调（历史命名保留：green 系列现在就是黑）
-    "green": "#1d1d1f",
-    "green_dark": "#000000",
-    "green_soft": "#efeff1",
-    "lime": "#d6d6d6",
-    "lime_soft": "#ededef",
-    "danger": "#1d1d1f",
-    "danger_soft": "#f2f2f2",
-    "amber": "#7a7a7a",
-    "shadow": "rgba(0, 0, 0, 0.06)",
+    "canvas": "#f4efea",
+    "sidebar": "#fbf6f1",
+    "paper_alt": "#fbf6f1",
+    "card": "#fffcf9",
+    "card_soft": "#fbf6f1",
+    "card_hover": "#fdf5f2",
+    "card_border": "#eadfd7",
+    "card_border_strong": "#dcccc2",
+    "ink": "#292424",
+    "ink_soft": "#514541",
+    "muted": "#736460",
+    "faint": "#8f7c76",
+    "on_ink": "#fffcf9",
+    "line": "#eadfd7",
+    "line_soft": "#f1e8e1",
+    "input_bg": "#f4efea",
+    "hover_bg": "#f9e0de",
+    "press_bg": "#f5d1cf",
+    "checked_bg": "#fceeeb",
+    "sel_bg": "#f3ded8",
+    "hl_bg": "#f4d9d4",
+    "accent": "#e48887",
+    "accent_text": "#93444d",
+    "accent_hover": "#93444d",
+    "accent_pressed": "#773440",
+    "on_accent": "#292424",
+    "on_accent_hover": "#fffcf9",
+    "scroll": "#dcccc2",
+    "scroll_hover": "#ba9f94",
+    "danger": "#b4302a",
+    "danger_soft": "#f9e6e1",
 }
 
 DARK = {
-    "canvas": "#0f0f11",
-    "titlebar": "#131316",
-    "sidebar": "#131316",
-    "paper": "#131316",
-    "paper_alt": "#17171a",
-    "card": "#18181b",
-    "card_soft": "#1b1b1f",
-    "card_hover": "#1e1e22",
-    "card_border": "#26262b",
-    "card_border_strong": "#33333a",
-    "ink": "#ececee",
-    "ink_soft": "#c8c8cd",
-    "muted": "#8e8e96",
-    "faint": "#6b6b73",
-    "on_ink": "#0d0d0f",
-    "line": "#24242a",
-    "line_soft": "#1f1f24",
-    "input_bg": "#1f1f24",
-    "hover_bg": "#232329",
-    "press_bg": "#2a2a31",
-    "checked_bg": "#2a2a31",
-    "sel_bg": "#2f2f37",
-    "wall_hover": "#202027",
-    "wall_sel": "#2a2a31",
-    "btn_hover": "#ffffff",
-    "btn_press": "#d4d4d4",
-    "close_hover": "#3a3a42",
-    "hl_bg": "#4a4a52",
-    "scroll": "#3a3a42",
-    "scroll_hover": "#4e4e58",
-    "green": "#ececee",
-    "green_dark": "#ffffff",
-    "green_soft": "#232329",
-    "lime": "#4a4a54",
-    "lime_soft": "#22222a",
-    "danger": "#ececee",
-    "danger_soft": "#22222a",
-    "amber": "#a8a8ad",
-    "shadow": "rgba(0, 0, 0, 0.45)",
+    "canvas": "#1a1614",
+    "sidebar": "#221d1a",
+    "paper_alt": "#28211e",
+    "card": "#221d1a",
+    "card_soft": "#28211e",
+    "card_hover": "#2d2521",
+    "card_border": "#332b27",
+    "card_border_strong": "#4a3c36",
+    "ink": "#f2eae4",
+    "ink_soft": "#d5c6be",
+    "muted": "#b5a49c",
+    "faint": "#a08e84",
+    "on_ink": "#1a1614",
+    "line": "#332b27",
+    "line_soft": "#2d2521",
+    "input_bg": "#2c2420",
+    "hover_bg": "#342923",
+    "press_bg": "#42322c",
+    "checked_bg": "#392b26",
+    "sel_bg": "#4c3531",
+    "hl_bg": "#533735",
+    "accent": "#f09a99",
+    "accent_text": "#f09a99",
+    "accent_hover": "#93444d",
+    "accent_pressed": "#773440",
+    "on_accent": "#292424",
+    "on_accent_hover": "#fffcf9",
+    "scroll": "#594841",
+    "scroll_hover": "#7c645b",
+    "danger": "#ef8b82",
+    "danger_soft": "#3b2421",
 }
 
 C = dict(LIGHT)
@@ -104,7 +78,7 @@ _mode = "light"
 
 
 def set_mode(mode: str) -> str:
-    """切换皮肤：light / dark。返回实际生效的模式。"""
+    """原地更新 C，让自绘控件读取到生效的配色。"""
     global _mode
     _mode = "dark" if str(mode).lower() in ("dark", "深色", "夜间") else "light"
     C.clear()
@@ -120,7 +94,93 @@ def is_dark() -> bool:
     return _mode == "dark"
 
 
-# 笔记颜色标记（Timo 的 color 字段），默认无标记；深色下自动换成亮一档的灰阶
+class _HanLinStyle(QProxyStyle):
+    """为 Qt 自带的箭头和复选框绘制两套主题的状态。"""
+
+    def drawPrimitive(self, element, option, painter, widget=None):
+        if element in (QStyle.PE_IndicatorCheckBox, QStyle.PE_IndicatorItemViewItemCheck):
+            self._draw_checkbox(option, painter)
+        elif element in (QStyle.PE_IndicatorArrowDown, QStyle.PE_IndicatorSpinDown, QStyle.PE_IndicatorSpinUp):
+            self._draw_arrow(option, painter, upward=element == QStyle.PE_IndicatorSpinUp)
+        else:
+            super().drawPrimitive(element, option, painter, widget)
+
+    @staticmethod
+    def _draw_arrow(option, painter, upward):
+        center = QRectF(option.rect).center()
+        dx = min(3.2, option.rect.width() / 2 - 0.5)
+        dy = -1.6 if upward else 1.6
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        if not option.state & QStyle.State_Enabled:
+            painter.setOpacity(0.45)
+        painter.setPen(QPen(QColor(C["muted"]), 1.2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.drawPolyline(QPolygonF([
+            center + QPointF(-dx, -dy), center + QPointF(0, dy), center + QPointF(dx, -dy),
+        ]))
+        painter.restore()
+
+    @staticmethod
+    def _draw_checkbox(option, painter):
+        checked = option.state & (QStyle.State_On | QStyle.State_NoChange)
+        rect = QRectF(option.rect).adjusted(0.8, 0.8, -0.8, -0.8)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        if not option.state & QStyle.State_Enabled:
+            painter.setOpacity(0.45)
+        border = "accent" if checked or option.state & QStyle.State_MouseOver else "faint"
+        painter.setPen(QPen(QColor(C[border]), 1))
+        painter.setBrush(QColor(C["accent" if checked else "card"]))
+        painter.drawRoundedRect(rect, 3, 3)
+        if checked:
+            center = rect.center()
+            painter.setPen(QPen(QColor(C["on_accent"]), 1.35, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            if option.state & QStyle.State_NoChange:
+                painter.drawLine(center + QPointF(-3, 0), center + QPointF(3, 0))
+            else:
+                painter.drawPolyline(QPolygonF([
+                    center + QPointF(-3, 0), center + QPointF(-1, 2.2), center + QPointF(3.5, -2.6),
+                ]))
+        painter.restore()
+
+
+def apply_theme(app, mode: str) -> None:
+    """同时更新样式表和 Qt 自带控件使用的调色板。"""
+    from PyQt5.QtGui import QPalette
+
+    set_mode(mode)
+    if not app.property("hanlinStyleInstalled"):
+        app.setStyle(_HanLinStyle("Fusion"))
+        app.setProperty("hanlinStyleInstalled", True)
+    palette = app.style().standardPalette()
+    for role, key in (
+        (QPalette.Window, "canvas"),
+        (QPalette.WindowText, "ink"),
+        (QPalette.Base, "card"),
+        (QPalette.AlternateBase, "card_soft"),
+        (QPalette.Text, "ink"),
+        (QPalette.Button, "card_soft"),
+        (QPalette.ButtonText, "ink"),
+        (QPalette.ToolTipBase, "ink"),
+        (QPalette.ToolTipText, "on_ink"),
+        (QPalette.PlaceholderText, "muted"),
+        (QPalette.Highlight, "sel_bg"),
+        (QPalette.HighlightedText, "accent_text"),
+        (QPalette.Link, "accent_text"),
+        (QPalette.LinkVisited, "accent_text"),
+        (QPalette.Light, "card_hover"),
+        (QPalette.Mid, "card_border_strong"),
+        (QPalette.Dark, "scroll_hover"),
+    ):
+        palette.setColor(role, QColor(C[key]))
+    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
+        palette.setColor(QPalette.Disabled, role, QColor(C["faint"]))
+
+    app.setPalette(palette)
+    app.setStyleSheet(app_qss())
+
+
+# 笔记颜色标记沿用 Timo 的 color 字段，切换主题时保持原色。
 NOTE_COLORS = [
     ("无", None),
     ("浅灰", "#e8e8e8"),
@@ -135,6 +195,17 @@ NOTE_COLORS = [
 FONT_UI = '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif'
 FONT_TEXT = '"Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif'
 FONT_MONO = '"Cascadia Code", "Consolas", "JetBrains Mono", monospace'
+
+
+def _heading_font() -> tuple[str, int]:
+    from PyQt5.QtGui import QFont, QFontInfo
+    from PyQt5.QtWidgets import QApplication
+
+    if QApplication.instance():
+        for preferred in ("MF YueHei (Noncommercial)", "造字工房悦黑（非商用）"):
+            if QFontInfo(QFont(preferred)).family() == preferred:
+                return f'"{preferred}"', 400
+    return FONT_UI, 600
 
 
 def color_icon(col, size: int = 14):
@@ -172,6 +243,7 @@ def add_shadow(widget, blur: int = 26, y: int = 6, alpha: int = 24):
 
 def app_qss(scale: float = 1.0) -> str:
     s = scale
+    heading_font, heading_weight = _heading_font()
     return f"""
 * {{ outline: none; }}
 QWidget {{
@@ -181,16 +253,38 @@ QWidget {{
 }}
 QMainWindow, #Root, #Body {{ background: {C['canvas']}; }}
 
+/* ---------- 窗口标题 ---------- */
+#TitleBar, QLabel#TitleBrand {{ background: transparent; border: none; }}
+QLabel#TitleBrand, QLabel#DialogTitle, #ListHeader, QLineEdit#NoteTitle,
+QLabel#WelcomeTitle, QLabel#SetupTitle, QLabel#AboutTitle {{
+    font-family: {heading_font}; font-weight: {heading_weight};
+}}
+QLabel#TitleBrand {{ color: {C['ink']}; font-size: {int(14 * s)}px; }}
+#DialogTitleBar {{
+    background: {C['card']}; border-bottom: 1px solid {C['line_soft']};
+    border-top-left-radius: 12px; border-top-right-radius: 12px;
+}}
+QLabel#DialogTitle {{ color: {C['ink']}; font-size: {int(13 * s)}px; }}
+QLabel#WelcomeTitle {{ font-size: {int(30 * s)}px; }}
+QLabel#SetupTitle {{ font-size: {int(26 * s)}px; }}
+QLabel#AboutTitle {{ font-size: {int(19 * s)}px; }}
+QLabel#WelcomeSub, QLabel#SetupHint {{ color: {C['muted']}; }}
+QLabel#WelcomeDesc {{ color: {C['ink_soft']}; }}
+QToolButton#WinBtn, QToolButton#CloseBtn, QToolButton#DialogClose {{ font-size: {int(12 * s)}px; }}
+QToolButton#CloseBtn:hover, QToolButton#DialogClose:hover {{
+    background: {C['danger_soft']}; color: {C['danger']};
+}}
+
 /* ---------- 卡片容器 ---------- */
 #Sidebar {{
     background: {C['sidebar']};
-    border: 1px solid {C['card_border']};
-    border-radius: 16px;
 }}
 #ListPane, #EditorPane {{
     background: {C['card']};
+}}
+#Sidebar, #ListPane, #EditorPane {{
     border: 1px solid {C['card_border']};
-    border-radius: 16px;
+    border-radius: 12px;
 }}
 
 /* ---------- 侧栏 ---------- */
@@ -205,7 +299,7 @@ QMainWindow, #Root, #Body {{ background: {C['canvas']}; }}
 #SideSection {{ color: {C['faint']}; font-size: {int(11 * s)}px; font-weight: 600; padding: 2px 6px; }}
 #NewTopicBtn {{
     background: {C['card']}; border: 1px solid {C['card_border']};
-    border-radius: 10px; color: {C['muted']}; padding: 8px 10px;
+    border-radius: 7px; color: {C['muted']}; padding: 8px 10px;
 }}
 #NewTopicBtn:hover {{ border-color: {C['card_border_strong']}; color: {C['ink']}; background: {C['hover_bg']}; }}
 
@@ -213,61 +307,61 @@ QListWidget#TopicList, QListWidget#NavList {{
     background: transparent; border: none;
 }}
 QListWidget#NavList::item {{
+    border: 1px solid transparent;
     border-radius: 10px; padding: 10px 12px; margin: 2px 4px;
     color: {C['ink_soft']};
 }}
 QListWidget#NavList::item:selected {{
-    background: {C['card']}; color: {C['ink']};
+    background: {C['checked_bg']}; color: {C['accent_text']};
     border: 1px solid {C['card_border_strong']};
+    border-left: 2px solid {C['accent']};
 }}
-QListWidget#NavList::item:hover {{
+QListWidget#NavList::item:hover:!selected {{
     background: {C['card_hover']};
 }}
 
 QListWidget#Wall {{ background: transparent; border: none; }}
-QListWidget#Wall::item {{ border-radius: 10px; margin: 2px; }}
-QListWidget#Wall::item:hover {{ background: {C['wall_hover']}; }}
-QListWidget#Wall::item:selected {{ background: {C['wall_sel']}; }}
+QListWidget#Wall::item {{ border: 1px solid transparent; border-radius: 10px; margin: 2px; }}
+QListWidget#Wall::item:hover {{ background: {C['card_hover']}; }}
+QListWidget#Wall::item:selected {{ background: {C['checked_bg']}; border-color: {C['accent']}; }}
 
 /* ---------- 中栏 ---------- */
-#ListHeader {{ font-size: {int(18 * s)}px; font-weight: 600; color: {C['ink']}; letter-spacing: 0.2px; }}
+#ListHeader {{ font-size: {int(18 * s)}px; color: {C['ink']}; }}
 #CountLabel {{ color: {C['faint']}; font-size: {int(11 * s)}px; }}
 
 QLineEdit {{
-    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 8px;
+    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 5px;
     padding: 8px 11px; color: {C['ink']};
-    selection-background-color: {C['ink']}; selection-color: {C['on_ink']};
+    selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
-QLineEdit:focus {{ border: 1px solid {C['ink']}; }}
+QLineEdit:focus {{ border-color: {C['accent_text']}; }}
 
 QLineEdit#Search {{
-    background: {C['input_bg']}; border: 1px solid transparent; border-radius: 12px;
-    padding: 9px 14px; selection-background-color: {C['ink']}; selection-color: {C['on_ink']};
+    background: {C['input_bg']}; border: 1px solid transparent; border-radius: 5px;
+    padding: 9px 14px;
 }}
-QLineEdit#Search:focus {{ background: {C['card']}; border: 1px solid {C['ink']}; }}
+QLineEdit#Search:focus {{ background: {C['card']}; border-color: {C['accent_text']}; }}
 
 QFrame#FindBar {{ background: {C['paper_alt']}; border: none; border-top: 1px solid {C['line']}; border-bottom: 1px solid {C['line']}; }}
 QFrame#FindBar QLineEdit {{
-    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 8px;
-    padding: 4px 9px; selection-background-color: {C['ink']}; selection-color: {C['on_ink']};
+    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 5px;
+    padding: 4px 9px;
 }}
-QFrame#FindBar QLineEdit:focus {{ border: 1px solid {C['ink']}; }}
+QFrame#FindBar QLineEdit:focus {{ border-color: {C['accent_text']}; }}
 QFrame#FindBar QToolButton {{ border: none; border-radius: 6px; padding: 3px 6px; color: {C['muted']}; }}
 QFrame#FindBar QToolButton:hover {{ background: {C['hover_bg']}; color: {C['ink']}; }}
 #FindCount {{ color: {C['muted']}; font-size: {int(11 * s)}px; }}
 QLabel#FieldLabel {{ color: {C['muted']}; font-size: {int(12 * s)}px; }}
 
-#ListEmpty {{ color: {C['faint']}; font-size: {int(12 * s)}px; line-height:1.6; }}
+#ListEmpty {{ color: {C['faint']}; font-size: {int(12 * s)}px; }}
 QListWidget#NoteList {{ background: {C['card']}; border: none; padding: 4px 2px; }}
 QListWidget#NoteList::item {{ border: none; margin: 0px; }}
 
 QPushButton#NewNoteBtn {{
-    background: {C['ink']}; color: {C['on_ink']}; border: none;
-    border-radius: 10px 0 0 10px;
+    border-top-left-radius: 7px; border-bottom-left-radius: 7px;
+    border-top-right-radius: 0; border-bottom-right-radius: 0;
     padding: 9px 14px; font-weight: 600;
 }}
-QPushButton#NewNoteBtn:hover {{ background: {C['btn_hover']}; }}
-QPushButton#NewNoteBtn:pressed {{ background: {C['btn_press']}; }}
 QToolButton#SortBtn {{
     border: none; background: transparent; border-radius: 7px;
     color: {C['muted']}; font-size: {int(13 * s)}px;
@@ -277,15 +371,14 @@ QToolButton#SortBtn:pressed {{ background: {C['line']}; }}
 QToolButton#SortBtn::menu-indicator {{ image: none; width: 0px; }}
 
 QToolButton#NewTypeBtn {{
-    background: {C['ink']}; color: {C['on_ink']}; border: none;
-    border-radius: 0 10px 10px 0;
+    border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+    border-top-left-radius: 0; border-bottom-left-radius: 0;
     font-size: {int(11 * s)}px;
 }}
-QToolButton#NewTypeBtn:hover {{ background: {C['btn_hover']}; }}
 QToolButton#NewTypeBtn::menu-indicator {{ image: none; width: 0px; }}
 
 /* ---------- 编辑区 ---------- */
-#EditorTopBar {{ background: {C['card']}; border-bottom: 1px solid {C['line_soft']}; }}
+#EditorTopBar {{ border-bottom: 1px solid {C['line_soft']}; }}
 #TypeBadge {{
     color: {C['ink_soft']}; background: {C['hover_bg']};
     border-radius: 7px; padding: 3px 9px; font-size: {int(11 * s)}px; font-weight: 600;
@@ -293,22 +386,22 @@ QToolButton#NewTypeBtn::menu-indicator {{ image: none; width: 0px; }}
 #SaveState {{ color: {C['faint']}; font-size: {int(11 * s)}px; }}
 
 QLineEdit#NoteTitle {{
-    background: transparent; border: none; padding: 2px 0;
-    font-family: {FONT_TEXT}; font-size: {int(24 * s)}px; font-weight: 500; color: {C['ink']};
+    background: transparent; border: none; border-bottom: 1px solid transparent; padding: 2px 0;
+    font-size: {int(24 * s)}px; color: {C['ink']};
 }}
 QLineEdit#NoteTitle::placeholder {{ color: {C['faint']}; }}
-QLineEdit#NoteTitle:focus {{ border-bottom: 1px solid {C['card_border']}; }}
+QLineEdit#NoteTitle:focus {{ border-bottom-color: {C['accent_text']}; }}
 
 QPlainTextEdit#Editor {{
     background: {C['card']}; border: none; padding: 18px 26px;
     font-family: {FONT_TEXT}; font-size: {int(15 * s)}px; color: {C['ink']};
-    selection-background-color: {C['sel_bg']}; selection-color: {C['ink']};
+    selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
 QTextBrowser#Preview {{
     background: {C['paper_alt']}; border: none; border-left: 1px solid {C['line']};
     padding: 18px 26px;
     font-family: {FONT_TEXT}; font-size: {int(15 * s)}px; color: {C['ink']};
-    selection-background-color: {C['sel_bg']};
+    selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
 
 /* 格式栏：一条浅浅的卡片 */
@@ -316,63 +409,94 @@ QTextBrowser#Preview {{
     background: {C['card']}; border: 1px solid {C['line_soft']};
     border-radius: 12px; margin: 6px 16px 2px 16px;
 }}
-#FormatBar QDateEdit, QTimeEdit {{
+QDateEdit, QTimeEdit {{
     background: {C['card']}; border: 1px solid {C['line']};
-    border-radius: 8px; padding: 6px 8px; min-height: 18px;
-    selection-background-color: {C['ink']}; selection-color: {C['on_ink']};
+    border-radius: 5px; padding: 6px 8px; min-height: 18px;
+    selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
-QDateEdit:focus, QTimeEdit:focus {{ border-color: {C['ink']}; }}
-QDateEdit::drop-down {{ width: 22px; border: none; }}
-QTimeEdit::up-button, QTimeEdit::down-button {{ width: 16px; border: none; }}
-
-QToolButton {{ padding: 4px 6px; border-radius: 7px; }}
+QDateEdit:focus, QTimeEdit:focus {{ border-color: {C['accent_text']}; }}
 
 /* 类型页内部的小卡片（账号 / 日子 / 链接） */
 #Card {{
     background: {C['card_soft']}; border: 1px solid {C['card_border']};
-    border-radius: 14px;
+    border-radius: 12px;
 }}
 #Card QLabel {{ color: {C['muted']}; font-size: {int(12 * s)}px; background: transparent; border: none; }}
 #Card QLineEdit {{
-    background: transparent; border: none; border-radius: 8px; padding: 6px 4px;
+    background: transparent; border: none; border-radius: 5px; padding: 6px 4px;
     font-size: {int(15 * s)}px;
 }}
 #Card QLineEdit:focus {{ background: {C['card']}; }}
 
 QToolButton {{
-    background: transparent; border: none; border-radius: 8px; padding: 5px 7px; color: {C['ink_soft']};
+    background: transparent; border: none; border-radius: 7px; padding: 5px 7px; color: {C['ink_soft']};
 }}
 QToolButton:hover {{ background: {C['hover_bg']}; color: {C['ink']}; }}
-QToolButton:checked {{ background: {C['checked_bg']}; color: {C['ink']}; }}
+QToolButton:checked {{ background: {C['checked_bg']}; color: {C['accent_text']}; }}
 QToolButton:pressed {{ background: {C['press_bg']}; }}
 
 /* ---------- 通用按钮 ---------- */
 QPushButton {{
-    background: {C['card']}; border: 1px solid {C['card_border_strong']}; border-radius: 9px;
+    background: {C['card']}; border: 1px solid {C['card_border_strong']}; border-radius: 7px;
     padding: 7px 14px; color: {C['ink']};
 }}
-QPushButton:hover {{ border-color: {C['ink']}; background: {C['card']}; }}
-QPushButton:pressed {{ background: {C['hover_bg']}; }}
-QPushButton:default {{ background: {C['ink']}; color: {C['on_ink']}; border: none; }}
-QPushButton:default:hover {{ background: {C['btn_hover']}; }}
-QPushButton:disabled {{ color: {C['faint']}; border-color: {C['line']}; background: {C['paper_alt']}; }}
+QPushButton:hover {{ border-color: {C['accent_text']}; background: {C['hover_bg']}; }}
+QPushButton:pressed {{ background: {C['press_bg']}; }}
+QPushButton:default, QPushButton#Primary, QPushButton#WelcomePrimary,
+QPushButton#NewNoteBtn, QToolButton#NewTypeBtn {{
+    background: {C['accent']}; color: {C['on_accent']}; border: none;
+}}
+QPushButton:default:hover, QPushButton#Primary:hover, QPushButton#WelcomePrimary:hover,
+QPushButton#NewNoteBtn:hover, QToolButton#NewTypeBtn:hover {{
+    background: {C['accent_hover']}; color: {C['on_accent_hover']};
+}}
+QPushButton:default:pressed, QPushButton#Primary:pressed, QPushButton#WelcomePrimary:pressed,
+QPushButton#NewNoteBtn:pressed, QToolButton#NewTypeBtn:pressed {{
+    background: {C['accent_pressed']}; color: {C['on_accent_hover']};
+}}
+QToolButton#NewTypeBtn {{ border-left: 1px solid {C['accent_hover']}; }}
+QPushButton#Plain, QPushButton#Primary, QPushButton#Danger {{ padding: 9px 22px; }}
+QPushButton#Plain, QPushButton#WelcomePlain {{
+    background: {C['card']}; border: 1px solid {C['card_border_strong']}; color: {C['ink']};
+}}
+QPushButton#Plain:hover, QPushButton#WelcomePlain:hover {{
+    border-color: {C['accent_text']}; background: {C['hover_bg']};
+}}
+QPushButton#Plain:pressed, QPushButton#WelcomePlain:pressed {{ background: {C['press_bg']}; }}
+QPushButton#WelcomePrimary, QPushButton#WelcomePlain {{ padding: 12px 18px; }}
+QPushButton#WelcomePrimary {{ font-size: {int(14 * s)}px; font-weight: 600; }}
+QPushButton#Link {{
+    background: transparent; border: none; color: {C['accent_text']}; font-size: {int(12 * s)}px;
+}}
+QPushButton#Link:hover {{ background: {C['hover_bg']}; }}
+QPushButton#Danger {{
+    background: {C['danger_soft']}; color: {C['danger']}; border: 1px solid {C['danger']};
+}}
+QPushButton#Danger:hover {{ background: {C['card']}; }}
+QPushButton#Danger:pressed {{ background: {C['press_bg']}; }}
+QPushButton:disabled, QPushButton#Primary:disabled, QPushButton#Danger:disabled, QToolButton:disabled {{
+    color: {C['faint']}; border-color: {C['line']}; background: {C['paper_alt']};
+}}
 
 /* ---------- 滚动条 ---------- */
-QScrollBar:vertical {{ background: transparent; width: 10px; margin: 3px 2px; }}
-QScrollBar::handle:vertical {{ background: {C['scroll']}; border-radius: 4px; min-height: 32px; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 5px 2px; }}
+QScrollBar::handle:vertical {{ background: {C['scroll']}; border-radius: 3px; min-height: 24px; }}
 QScrollBar::handle:vertical:hover {{ background: {C['scroll_hover']}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
-QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px 3px; }}
-QScrollBar::handle:horizontal {{ background: {C['scroll']}; border-radius: 4px; }}
+QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px 5px; }}
+QScrollBar::handle:horizontal {{ background: {C['scroll']}; border-radius: 3px; min-width: 24px; }}
+QScrollBar::handle:horizontal:hover {{ background: {C['scroll_hover']}; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
 
 /* ---------- 菜单 ---------- */
 QMenu {{
-    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 11px; padding: 6px;
+    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 10px; padding: 6px;
 }}
-QMenu::item {{ padding: 7px 28px 7px 12px; border-radius: 7px; }}
-QMenu::item:selected {{ background: {C['hover_bg']}; color: {C['ink']}; }}
+QMenu::item {{ padding: 7px 28px 7px 12px; border-radius: 6px; }}
+QMenu::item:selected {{ background: {C['checked_bg']}; color: {C['accent_text']}; }}
+QMenu::item:disabled {{ color: {C['faint']}; }}
 QMenu::separator {{ height: 1px; background: {C['line']}; margin: 5px 8px; }}
 
 QToolTip {{
@@ -381,20 +505,48 @@ QToolTip {{
 
 /* ---------- 对话框 ---------- */
 QDialog {{ background: {C['canvas']}; }}
-QDialog QLabel {{ color: {C['ink']}; }}
 #DialogBody {{ background: {C['card']}; }}
-QComboBox {{
-    background: {C['card']}; border: 1px solid {C['card_border_strong']}; border-radius: 9px; padding: 6px 10px;
+QLineEdit#PathBox {{ padding: 9px 11px; }}
+QLabel#ImportSummary {{ font-size: {int(15 * s)}px; font-weight: 600; }}
+QLabel#LibraryStats {{
+    background: {C['paper_alt']}; border: 1px solid {C['card_border']};
+    border-radius: 8px; padding: 11px 14px;
 }}
-QComboBox:focus {{ border-color: {C['ink']}; }}
+QLabel#KeyCap {{
+    background: {C['input_bg']}; border-radius: 5px; padding: 3px 8px;
+    font-family: "Consolas", "Microsoft YaHei UI"; font-size: {int(12 * s)}px;
+}}
+QListWidget#BackupList, QListWidget#TrashTopicList, QTreeWidget#DupeTree {{
+    background: {C['card']}; border: 1px solid {C['card_border']};
+    border-radius: 8px; padding: 4px;
+}}
+QListWidget#BackupList::item, QListWidget#TrashTopicList::item {{ padding: 7px 8px; border-radius: 6px; }}
+QTreeWidget#DupeTree::item {{ height: 26px; }}
+QListWidget#BackupList::item:selected, QListWidget#TrashTopicList::item:selected, QTreeWidget#DupeTree::item:selected {{
+    background: {C['checked_bg']}; color: {C['accent_text']};
+}}
+QTreeWidget#DupeTree QHeaderView::section {{
+    background: {C['card_soft']}; border: none; color: {C['muted']}; padding: 5px 6px; font-size: {int(11 * s)}px;
+}}
+QProgressBar {{ background: {C['line_soft']}; border: none; border-radius: 3px; }}
+QProgressBar::chunk {{ background: {C['accent']}; border-radius: 3px; }}
+QComboBox {{
+    background: {C['card']}; border: 1px solid {C['card_border_strong']}; border-radius: 5px; padding: 6px 10px;
+}}
+QComboBox:focus, QSpinBox:focus {{ border-color: {C['accent_text']}; }}
 QComboBox QAbstractItemView {{
-    background: {C['card']}; border: 1px solid {C['card_border']}; selection-background-color: {C['hover_bg']};
-    selection-color: {C['ink']}; outline: none;
+    background: {C['card']}; border: 1px solid {C['card_border']}; selection-background-color: {C['checked_bg']};
+    selection-color: {C['accent_text']}; outline: none;
 }}
 QSpinBox {{
-    background: {C['card']}; border: 1px solid {C['card_border_strong']}; border-radius: 9px; padding: 5px 8px;
+    background: {C['card']}; border: 1px solid {C['card_border_strong']}; border-radius: 5px; padding: 5px 8px;
 }}
 QCheckBox {{ spacing: 8px; }}
+QCalendarWidget QWidget#qt_calendar_navigationbar {{ background: {C['card_soft']}; }}
+QCalendarWidget QAbstractItemView {{
+    background: {C['card']}; selection-background-color: {C['accent']}; selection-color: {C['on_accent']};
+}}
+QLabel#ViewerCounter {{ color: {C['muted']}; }}
 QSplitter::handle {{ background: {C['line_soft']}; }}
 QSplitter::handle:horizontal {{ width: 1px; }}
 

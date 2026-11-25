@@ -41,12 +41,13 @@ def _base_dir() -> Path:
 
 
 def app_icon() -> QIcon:
-    """优先程序目录，其次 PyInstaller onedir 的 _internal。"""
+    """源码、便携程序和自解压安装器共用一份多尺寸图标。"""
     root = _base_dir()
-    for p in (root / "assets" / "timo-icon.png",
-              root / "_internal" / "assets" / "timo-icon.png"):
-        if p.exists():
-            return QIcon(str(p))
+    bundled = Path(getattr(sys, "_MEIPASS", root))
+    for directory in (root, bundled):
+        path = directory / "assets" / "hanlin-notes.ico"
+        if path.is_file():
+            return QIcon(str(path))
     return QIcon()
 
 
@@ -91,21 +92,17 @@ class TitleBar(QWidget):
 
         self.setObjectName("TitleBar")
         self.setFixedHeight(self.HEIGHT)
-        self.refresh_style()
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(16, 0, 10, 0)
         lay.setSpacing(8)
 
-        icon = QLabel()
-        icon.setPixmap(app_icon().pixmap(QSize(18, 18)))
-        icon.setFixedSize(18, 18)
+        icon = QLabel(objectName="TitleIcon")
+        icon.setPixmap(app_icon().pixmap(QSize(20, 20)))
+        icon.setFixedSize(20, 20)
         lay.addWidget(icon)
 
-        brand = QLabel("Timo", objectName="TitleBrand")
-        lay.addWidget(brand)
-        sub = QLabel("For Windows", objectName="TitleSub")
-        lay.addWidget(sub, alignment=Qt.AlignBottom)
+        lay.addWidget(QLabel("HanLin-Notes", objectName="TitleBrand"))
         lay.addStretch(1)
 
         self.btn_min = self._win_button("─", "最小化", self.win.showMinimized)
@@ -116,44 +113,6 @@ class TitleBar(QWidget):
 
         self.sync_max_button()
 
-
-    def _qss(self) -> str:
-        return f"""
-            QWidget#TitleBar {{
-                background: transparent;
-                border: none;
-            }}
-            QLabel#TitleBrand {{
-                color: {C['ink']};
-                font-size: 13px;
-                font-weight: 600;
-            }}
-            QLabel#TitleSub {{
-                color: {C['faint']};
-                font-size: 11px;
-                padding-bottom: 1px;
-            }}
-            QToolButton#WinBtn {{
-                border: none;
-                background: transparent;
-                color: {C['ink_soft']};
-                border-radius: 6px;
-                font-size: 12px;
-            }}
-            QToolButton#WinBtn:hover {{ background: {C['line_soft']}; }}
-            QToolButton#WinBtn:pressed {{ background: {C['line']}; }}
-            QToolButton#CloseBtn {{
-                border: none;
-                background: transparent;
-                color: {C['ink_soft']};
-                border-radius: 6px;
-                font-size: 12px;
-            }}
-            QToolButton#CloseBtn:hover {{ background: {C['close_hover']}; color: {C['on_ink']}; }}
-        """
-
-    def refresh_style(self) -> None:
-        self.setStyleSheet(self._qss())
 
     def _win_button(self, text, tip, slot, name="WinBtn") -> QToolButton:
         b = QToolButton(objectName=name)
@@ -226,7 +185,6 @@ class DialogTitleBar(QWidget):
         self.setObjectName("DialogTitleBar")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedHeight(self.HEIGHT)
-        self.refresh_style()
         lay = QHBoxLayout(self)
         lay.setContentsMargins(16, 0, 10, 0)
         lay.setSpacing(6)
@@ -238,29 +196,6 @@ class DialogTitleBar(QWidget):
         self.btn_close.setCursor(Qt.ArrowCursor)
         self.btn_close.clicked.connect(self.dlg.reject)
         lay.addWidget(self.btn_close)
-
-    def _qss(self) -> str:
-        return f"""
-            QWidget#DialogTitleBar {{
-                background: {C['card']};
-                border-bottom: 1px solid {C['line_soft']};
-                border-top-left-radius: 12px;
-                border-top-right-radius: 12px;
-            }}
-            QLabel#DialogTitle {{
-                color: {C['ink_soft']};
-                font-size: 12px;
-                font-weight: 600;
-            }}
-            QToolButton#DialogClose {{
-                border: none; background: transparent; color: {C['muted']};
-                border-radius: 6px; font-size: 12px;
-            }}
-            QToolButton#DialogClose:hover {{ background: {C['close_hover']}; color: {C['on_ink']}; }}
-        """
-
-    def refresh_style(self) -> None:
-        self.setStyleSheet(self._qss())
 
     def mousePressEvent(self, ev):
         if ev.button() == Qt.LeftButton:
@@ -284,7 +219,7 @@ class FramelessDialog(QDialog):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self._bar = DialogTitleBar(self, title)
         self.body = QWidget(objectName="DialogBody")
-        self.body.setStyleSheet(f"#DialogBody {{ background: {C['card']}; }}")
+        self.body.setAttribute(Qt.WA_StyledBackground, True)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)

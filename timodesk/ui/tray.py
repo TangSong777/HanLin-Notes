@@ -4,17 +4,16 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QAction, QApplication, QMenu, QSystemTrayIcon
 
-from .title_bar import _base_dir, app_icon
+from .title_bar import app_icon
 
 
 class TrayIcon(QSystemTrayIcon):
     """托盘图标：左键/双击唤出主窗口，右键菜单退出。"""
 
     def __init__(self, window, parent=None):
-        super().__init__(self._pick_icon(), parent)
+        super().__init__(app_icon(), parent)
         self.window = window
         self.setToolTip("HanLin-Notes · 本地笔记")
 
@@ -40,15 +39,6 @@ class TrayIcon(QSystemTrayIcon):
         self.setContextMenu(menu)
         self._menu = menu  # 防止被回收
         self.activated.connect(self._on_activated)
-
-    # ---------------- 图标 ----------------
-    @staticmethod
-    def _pick_icon() -> QIcon:
-        for name in ("timo-tray.ico", "timo-icon.png"):
-            p = _base_dir() / "assets" / name
-            if p.exists():
-                return QIcon(str(p))
-        return app_icon()
 
     # ---------------- 行为 ----------------
     def _on_activated(self, reason):

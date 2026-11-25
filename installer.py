@@ -24,7 +24,8 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 
-from timodesk.ui.dialogs import _BTN_QSS, confirm, error
+from timodesk.ui.dialogs import confirm, error
+from timodesk.ui.theme import apply_theme, system_mode
 from timodesk.ui.title_bar import FramelessDialog, _base_dir, app_icon
 
 MAIN_EXE = "HanLin-Notes.exe"
@@ -89,37 +90,21 @@ class SetupDialog(FramelessDialog):
         self._thread = None
         self._installed_to: Path | None = None
 
-        self.setStyleSheet(
-            _BTN_QSS
-            + """
-            #DialogBody { background:#ffffff; }
-            QLabel#Big { font-size:26px; color:#1f1f1f; font-weight:600; }
-            QLabel#Hint { color:#6b6b6b; font-size:13px; }
-            QLineEdit#PathBox {
-                border:1px solid #e4e4e4; border-radius:8px; padding:9px 11px;
-                font-size:13px; background:#ffffff;
-            }
-            QLineEdit#PathBox:focus { border-color:#1f1f1f; }
-            QProgressBar { border:none; background:#f0f0f0; border-radius:3px; }
-            QProgressBar::chunk { background:#1f1f1f; border-radius:3px; }
-            """
-        )
-
         lay = QVBoxLayout(self.body)
         lay.setContentsMargins(34, 26, 34, 26)
         lay.setSpacing(10)
 
-        lay.addWidget(QLabel("HanLin-Notes", objectName="Big"))
+        lay.addWidget(QLabel("HanLin-Notes", objectName="SetupTitle"))
         hint = QLabel(
             "绿色版，不用安装、不写注册表。解压到下面的文件夹就能用，\n"
             "笔记和图片都保存在这个文件夹的 Data 目录里，整个文件夹可以拷走。"
         )
-        hint.setObjectName("Hint")
+        hint.setObjectName("SetupHint")
         hint.setWordWrap(True)
         lay.addWidget(hint)
         lay.addSpacing(8)
 
-        lay.addWidget(QLabel("安装到", objectName="Hint"))
+        lay.addWidget(QLabel("安装到", objectName="SetupHint"))
         row = QHBoxLayout()
         row.setSpacing(8)
         self.path_box = QLineEdit(str(default_target()), objectName="PathBox")
@@ -136,7 +121,7 @@ class SetupDialog(FramelessDialog):
         self.bar.hide()
         lay.addWidget(self.bar)
 
-        self.status = QLabel("", objectName="Hint")
+        self.status = QLabel("", objectName="SetupHint")
         self.status.setWordWrap(True)
         lay.addWidget(self.status)
         lay.addStretch(1)
@@ -172,6 +157,7 @@ class SetupDialog(FramelessDialog):
                 f"这个文件夹里已经有 {MAIN_EXE}：\n{target}\n\n继续会覆盖旧文件（笔记数据不会动）。",
                 ok_text="覆盖",
                 cancel_text="换个位置",
+                danger=True,
             ):
                 return
         zip_path = payload_path()
@@ -264,8 +250,8 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("HanLin-Notes Setup")
     app.setApplicationDisplayName("")
-    app.setStyle("Fusion")
     app.setFont(QFont("Microsoft YaHei UI", 9))
+    apply_theme(app, system_mode())
     app.setWindowIcon(app_icon())
     dlg = SetupDialog()
     dlg.exec_()

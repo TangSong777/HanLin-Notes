@@ -1,12 +1,14 @@
 # HanLin-Notes
 
+<img src="assets/hanlin-notes.png" width="72" height="72" alt="HanLin-Notes 的「记」字图标">
+
 一个 Windows 本地笔记软件：**数据全在本机，不需要账号，不联网**。
 
-它的**数据格式与交互思路来自 Android 应用 [Timo笔记](https://timo.idik.net/)**——能直接导入手机 App 导出的 ZIP，改完还能再导出回去，方便在电脑上整理、再导回手机。但它是**独立软件**，不是 Timo 的移植版或改包：界面按桌面端重新设计，代码全部重写，没有账号、云同步和内购。
+HanLin-Notes 是独立开发的桌面软件。数据格式和部分交互沿用 Android 应用 [Timo笔记](https://timo.idik.net/) 的思路。可直接导入 Timo 的可读数据 ZIP，在电脑上整理后再导出回手机。桌面界面采用 HanLin 系列的暖白、珊瑚红配色，并提供深色模式。
 
 ![主界面](docs/screenshot-main.png)
 
-深色模式（数据与设置 → 外观 → 深色，也可跟随系统）：
+在「数据与设置 → 外观」可切换浅色、深色或跟随系统。
 
 ![深色模式](docs/screenshot-dark.png)
 

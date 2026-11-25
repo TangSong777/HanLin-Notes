@@ -206,12 +206,6 @@ class ImageViewer(QDialog):
         self.idx = start
         self.setWindowTitle("查看图片")
         self.resize(1000, 720)
-        self.setStyleSheet(
-            f"QDialog{{background:{C['ink']};}}"
-            "QPushButton{background:rgba(255,255,255,0.12);color:#f2f2f2;border:0;"
-            "border-radius:8px;padding:6px 18px;}"
-            "QPushButton:hover{background:rgba(255,255,255,0.22);}"
-        )
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self._pm = QPixmap()
@@ -220,7 +214,7 @@ class ImageViewer(QDialog):
         self.scroll.setWidgetResizable(False)
         self.scroll.setAlignment(Qt.AlignCenter)
         self.scroll.setFrameShape(QFrame.NoFrame)
-        self.scroll.setStyleSheet("QScrollArea{background:transparent;}")
+        self.scroll.viewport().setAutoFillBackground(False)
         self.label = QLabel()
         self.label.setAlignment(Qt.AlignCenter)
         self.scroll.setWidget(self.label)
@@ -232,8 +226,7 @@ class ImageViewer(QDialog):
         prev.clicked.connect(lambda: self._step(-1))
         bar.addWidget(prev)
         bar.addStretch(1)
-        self.counter = QLabel()
-        self.counter.setStyleSheet("color:#cfcfcf;")
+        self.counter = QLabel(objectName="ViewerCounter")
         bar.addWidget(self.counter)
         bar.addStretch(1)
         nxt = QPushButton("下一张 ›")
@@ -336,7 +329,7 @@ class NoteEditor(QWidget):
     # ================= 布局 =================
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(1, 1, 1, 1)
         root.setSpacing(0)
 
         # ---- 顶栏 ----
@@ -1359,13 +1352,14 @@ class NoteEditor(QWidget):
         self._update_meta_labels()
 
     def _paint_highlight(self):
-        """搜索词在预览里刷一层浅灰底（QTextBrowser 不认 span 背景，用 ExtraSelection）。"""
+        """用当前主题的底色标出预览里的搜索命中。"""
         term = getattr(self, "_highlight", "")
         if not term:
             self.preview.setExtraSelections([])
             return
         fmt = QTextCharFormat()
         fmt.setBackground(QColor(C["hl_bg"]))
+        fmt.setForeground(QColor(C["accent_text"]))
         doc = self.preview.document()
         sels = []
         for word in [w for w in term.split() if w]:
@@ -1434,11 +1428,11 @@ class NoteEditor(QWidget):
 
 
 def _thumb(pm: QPixmap, size: int):
-    from PyQt5.QtGui import QColor, QIcon, QPainter, QPainterPath
+    from PyQt5.QtGui import QIcon, QPainter, QPainterPath
 
     scaled = pm.scaled(size - 2, size - 2, Qt.KeepAspectRatio, Qt.SmoothTransformation)
     out = QPixmap(size, size)
-    out.fill(QColor(C["input_bg"]))
+    out.fill(Qt.transparent)
     p = QPainter(out)
     p.setRenderHint(QPainter.Antialiasing)
     p.setRenderHint(QPainter.SmoothPixmapTransform)

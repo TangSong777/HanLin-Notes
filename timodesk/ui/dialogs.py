@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon, QTextCharFormat
 from PyQt5.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -14,30 +15,11 @@ from PyQt5.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSizePolicy,
+    QToolButton,
     QVBoxLayout,
 )
 
-from .theme import C
 from .title_bar import FramelessDialog
-
-def _btn_qss() -> str:
-    """按钮样式（每次调用时按当前主题生成，切深色后才不会串色）。"""
-    return f"""
-QPushButton#Primary {{
-    background: {C['ink']}; color: {C['on_ink']}; border: none;
-    border-radius: 8px; padding: 9px 22px; font-size: 13px;
-}}
-QPushButton#Primary:hover {{ background: {C['btn_hover']}; }}
-QPushButton#Plain {{
-    background: {C['card']}; border: 1px solid {C['line']};
-    border-radius: 8px; padding: 9px 22px; color: {C['ink']}; font-size: 13px;
-}}
-QPushButton#Plain:hover {{ border-color: {C['ink']}; }}
-QPushButton#Link {{
-    background: transparent; border: none; color: {C['faint']}; font-size: 12px;
-}}
-QPushButton#Link:hover {{ color: {C['ink']}; }}
-"""
 
 
 def _button(text: str, name: str = "Plain") -> QPushButton:
@@ -49,16 +31,15 @@ def _button(text: str, name: str = "Plain") -> QPushButton:
 
 
 class MessageDialog(FramelessDialog):
-    def __init__(self, parent, title: str, text: str, ok_text="好", cancel_text=None):
+    def __init__(self, parent, title: str, text: str, ok_text="好", cancel_text=None, *, danger=False):
         super().__init__(parent, title)
         self.ok = False
-        self.setStyleSheet(_btn_qss() + f"QLabel#MsgText{{color:{C['ink']};font-size:13px;}}")
 
         lay = QVBoxLayout(self.body)
         lay.setContentsMargins(28, 22, 28, 20)
         lay.setSpacing(18)
 
-        lab = QLabel(text, objectName="MsgText")
+        lab = QLabel(text)
         lab.setWordWrap(True)
         lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
         lay.addWidget(lab, 0, Qt.AlignTop)
@@ -70,7 +51,7 @@ class MessageDialog(FramelessDialog):
             b = _button(cancel_text)
             b.clicked.connect(self.reject)
             row.addWidget(b)
-        ok = _button(ok_text, "Primary")
+        ok = _button(ok_text, "Danger" if danger else "Primary")
         ok.clicked.connect(self._accept)
         ok.setDefault(True)
         row.addWidget(ok)
@@ -89,17 +70,12 @@ class ProgressDialog(FramelessDialog):
     def __init__(self, parent, title: str, text: str):
         super().__init__(parent, title)
         self._canceled = False
-        self.setStyleSheet(_btn_qss() + f"""
-            QLabel#ProgText {{ color: {C['ink']}; font-size: 13px; }}
-            QProgressBar {{ background: {C['line_soft']}; border: none; border-radius: 3px; }}
-            QProgressBar::chunk {{ background: {C['ink']}; border-radius: 3px; }}
-        """)
 
         lay = QVBoxLayout(self.body)
         lay.setContentsMargins(28, 22, 28, 20)
         lay.setSpacing(14)
 
-        self.label = QLabel(text, objectName="ProgText")
+        self.label = QLabel(text)
         self.label.setWordWrap(True)
         lay.addWidget(self.label)
 
@@ -138,8 +114,8 @@ def info(parent, title: str, text: str, ok_text="好") -> None:
     MessageDialog(parent, title, text, ok_text).exec_()
 
 
-def confirm(parent, title: str, text: str, ok_text="继续", cancel_text="取消") -> bool:
-    d = MessageDialog(parent, title, text, ok_text, cancel_text)
+def confirm(parent, title: str, text: str, ok_text="继续", cancel_text="取消", *, danger=False) -> bool:
+    d = MessageDialog(parent, title, text, ok_text, cancel_text, danger=danger)
     d.exec_()
     return d.ok
 
@@ -155,7 +131,6 @@ class ReminderDialog(FramelessDialog):
         from datetime import datetime, timedelta
 
         super().__init__(parent, "设置提醒")
-        self.setStyleSheet(_btn_qss())
         from PyQt5.QtCore import QDate, QTime
         from PyQt5.QtWidgets import QDateEdit, QHBoxLayout, QLabel, QPushButton, QTimeEdit
 
@@ -171,8 +146,7 @@ class ReminderDialog(FramelessDialog):
         lay.setContentsMargins(28, 22, 28, 22)
         lay.setSpacing(14)
 
-        tip = QLabel("到时间后会从右下角弹出提醒。")
-        tip.setStyleSheet(f"color:{C['muted']};font-size:12px;")
+        tip = QLabel("到时间后会从右下角弹出提醒。", objectName="FieldLabel")
         lay.addWidget(tip)
 
         quick = QHBoxLayout()
@@ -194,6 +168,14 @@ class ReminderDialog(FramelessDialog):
         row.setSpacing(8)
         self.date = QDateEdit()
         self.date.setCalendarPopup(True)
+        calendar = self.date.calendarWidget()
+        for day in (Qt.Saturday, Qt.Sunday):
+            calendar.setWeekdayTextFormat(day, QTextCharFormat())
+        for name, text in (("qt_calendar_prevmonth", "‹"), ("qt_calendar_nextmonth", "›")):
+            button = calendar.findChild(QToolButton, name)
+            if button is not None:
+                button.setIcon(QIcon())
+                button.setText(text)
         self.date.setDisplayFormat("yyyy-MM-dd")
         self.date.setDate(QDate(base.year, base.month, base.day))
         self.time = QTimeEdit()
@@ -208,7 +190,7 @@ class ReminderDialog(FramelessDialog):
         btns.setSpacing(8)
         if has_reminder:
             b_clear = QPushButton("删除提醒")
-            b_clear.setObjectName("Link")
+            b_clear.setObjectName("Danger")
             b_clear.clicked.connect(self._clear)
             btns.addWidget(b_clear)
         btns.addStretch(1)
@@ -299,7 +281,6 @@ class BackupDialog(FramelessDialog):
         super().__init__(parent, "备份与恢复")
         from PyQt5.QtWidgets import QHBoxLayout, QListWidget, QPushButton
 
-        self.setStyleSheet(_btn_qss())
         self.lib = lib
         self.restored = False
         self.setFixedSize(520, 460)
@@ -308,19 +289,16 @@ class BackupDialog(FramelessDialog):
         lay.setContentsMargins(28, 22, 28, 22)
         lay.setSpacing(12)
 
-        tip = QLabel("每次启动最多每天自动备份一次，只保留最近 7 份。备份包含笔记正文与库结构，不含图片附件。")
+        tip = QLabel(
+            "每次启动最多每天自动备份一次，只保留最近 7 份。备份包含笔记正文与库结构，不含图片附件。",
+            objectName="FieldLabel",
+        )
         tip.setWordWrap(True)
-        tip.setStyleSheet(f"color:{C['muted']};font-size:12px;")
         lay.addWidget(tip)
 
         self.list = QListWidget()
         self.list.setObjectName("BackupList")
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.list.setStyleSheet(
-            f"QListWidget#BackupList{{background:{C['card']};border:1px solid {C['card_border']};border-radius:10px;padding:4px;}}"
-            f"QListWidget#BackupList::item{{padding:7px 8px;border-radius:6px;}}"
-            f"QListWidget#BackupList::item:selected{{background:{C['hover_bg']};color:{C['ink']};}}"
-        )
         lay.addWidget(self.list, 1)
 
         row = QHBoxLayout()
@@ -348,8 +326,7 @@ class BackupDialog(FramelessDialog):
         row.addWidget(b_close)
         lay.addLayout(row)
 
-        self.status = QLabel("")
-        self.status.setStyleSheet(f"color:{C['muted']};font-size:12px;")
+        self.status = QLabel(objectName="FieldLabel")
         lay.addWidget(self.status)
         self._reload()
 
@@ -418,7 +395,6 @@ class SettingsDialog(FramelessDialog):
         super().__init__(parent, "偏好设置")
         from PyQt5.QtWidgets import QComboBox, QHBoxLayout, QSpinBox
 
-        self.setStyleSheet(_btn_qss())
         self.settings = settings
         self.theme_changed = False
         self._orig_theme = theme_mode or "light"
@@ -492,7 +468,6 @@ class ImportModeDialog(FramelessDialog):
         super().__init__(parent, "导入 Timo 数据")
         from PyQt5.QtWidgets import QHBoxLayout
 
-        self.setStyleSheet(_btn_qss())
         self.mode: str | None = None
         self.setFixedSize(460, 232)
 
@@ -500,18 +475,15 @@ class ImportModeDialog(FramelessDialog):
         lay.setContentsMargins(30, 22, 30, 22)
         lay.setSpacing(10)
 
-        t = QLabel("当前库里有 %d 条笔记" % note_count)
-        t.setStyleSheet(f"font-size:15px;font-weight:600;color:{C['ink']};")
+        t = QLabel("当前库里有 %d 条笔记" % note_count, objectName="ImportSummary")
         lay.addWidget(t)
 
-        d1 = QLabel("合并导入：保留现在的笔记，只把包里没有的新笔记加进来。")
+        d1 = QLabel("合并导入：保留现在的笔记，只把包里没有的新笔记加进来。", objectName="FieldLabel")
         d1.setWordWrap(True)
-        d1.setStyleSheet(f"color:{C['ink_soft']};font-size:12px;")
         lay.addWidget(d1)
 
-        d2 = QLabel("替换导入：清空当前库，用包里的内容整体替换（动手前会先备份一份）。")
+        d2 = QLabel("替换导入：清空当前库，用包里的内容整体替换（动手前会先备份一份）。", objectName="FieldLabel")
         d2.setWordWrap(True)
-        d2.setStyleSheet(f"color:{C['muted']};font-size:12px;")
         lay.addWidget(d2)
 
         lay.addStretch(1)
@@ -553,19 +525,16 @@ class AboutDialog(FramelessDialog):
         super().__init__(parent, "关于")
         from PyQt5.QtWidgets import QHBoxLayout
 
-        self.setStyleSheet(_btn_qss())
         self.setFixedSize(520, 540)
 
         lay = QVBoxLayout(self.body)
         lay.setContentsMargins(32, 24, 32, 22)
         lay.setSpacing(10)
 
-        title = QLabel("HanLin-Notes")
-        title.setStyleSheet(f"font-size:19px;font-weight:600;color:{C['ink']};")
+        title = QLabel("HanLin-Notes", objectName="AboutTitle")
         lay.addWidget(title)
 
-        sub = QLabel(f"版本 {version} · Windows 本地笔记，数据只在自己电脑上")
-        sub.setStyleSheet(f"color:{C['muted']};font-size:12px;")
+        sub = QLabel(f"版本 {version} · Windows 本地笔记，数据只在自己电脑上", objectName="FieldLabel")
         lay.addWidget(sub)
 
         notes = [n for n in lib.notes.values() if n.state != "trash"]
@@ -573,35 +542,27 @@ class AboutDialog(FramelessDialog):
         chars = sum(len(lib.content(n.id)) for n in notes)
         att = len([p for p in lib.attachments_dir.glob("*") if p.is_file()]) if lib.attachments_dir.exists() else 0
 
-        stat = QLabel(f"{len(topics)} 个主题 · {len(notes)} 条笔记 · {att} 个附件 · 约 {chars:,} 字")
-        stat.setStyleSheet(
-            f"background:{C['paper_alt']};border:1px solid {C['card_border']};border-radius:10px;"
-            f"padding:11px 14px;color:{C['ink']};font-size:13px;"
+        stat = QLabel(
+            f"{len(topics)} 个主题 · {len(notes)} 条笔记 · {att} 个附件 · 约 {chars:,} 字",
+            objectName="LibraryStats",
         )
         lay.addWidget(stat)
 
-        lab = QLabel("快捷键")
-        lab.setStyleSheet(f"color:{C['muted']};font-size:11px;margin-top:6px;")
+        lab = QLabel("快捷键", objectName="SideSection")
         lay.addWidget(lab)
         for key, desc in self.SHORTCUTS:
             row = QHBoxLayout()
             row.setSpacing(10)
-            k = QLabel(key)
+            k = QLabel(key, objectName="KeyCap")
             k.setFixedWidth(120)
-            k.setStyleSheet(
-                f"color:{C['ink']};font-size:12px;font-family:'Consolas','Microsoft YaHei UI';"
-                f"background:{C['input_bg']};border-radius:6px;padding:3px 8px;"
-            )
             row.addWidget(k)
-            d = QLabel(desc)
-            d.setStyleSheet(f"color:{C['ink_soft']};font-size:12px;")
+            d = QLabel(desc, objectName="FieldLabel")
             row.addWidget(d, 1)
             lay.addLayout(row)
 
         lay.addStretch(1)
         bottom = QHBoxLayout()
-        path = QLabel(f"数据目录：{Path(lib.root).resolve()}")
-        path.setStyleSheet(f"color:{C['faint']};font-size:11px;")
+        path = QLabel(f"数据目录：{Path(lib.root).resolve()}", objectName="FieldLabel")
         path.setToolTip(str(lib.root))
         path.setMinimumWidth(10)
         bottom.addWidget(path, 1)
@@ -618,7 +579,6 @@ class TrashTopicsDialog(FramelessDialog):
         super().__init__(parent, "已删除的主题")
         from PyQt5.QtWidgets import QListWidget
 
-        self.setStyleSheet(_btn_qss())
         self.lib = lib
         self.changed = False
         self.setFixedSize(500, 430)
@@ -627,24 +587,19 @@ class TrashTopicsDialog(FramelessDialog):
         lay.setContentsMargins(28, 22, 28, 22)
         lay.setSpacing(12)
 
-        tip = QLabel("删掉的主题会先放在这里。恢复时，当初跟着它一起进回收站的笔记也会回到这个主题。")
+        tip = QLabel(
+            "删掉的主题会先放在这里。恢复时，当初跟着它一起进回收站的笔记也会回到这个主题。",
+            objectName="FieldLabel",
+        )
         tip.setWordWrap(True)
-        tip.setStyleSheet(f"color:{C['muted']};font-size:12px;")
         lay.addWidget(tip)
 
-        self.empty = QLabel("没有已删除的主题。")
-        self.empty.setStyleSheet(f"color:{C['faint']};font-size:13px;")
+        self.empty = QLabel("没有已删除的主题。", objectName="EmptyHint")
         lay.addWidget(self.empty)
 
         self.list = QListWidget()
         self.list.setObjectName("TrashTopicList")
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.list.setStyleSheet(
-            f"QListWidget#TrashTopicList{{background:{C['card']};border:1px solid {C['card_border']};"
-            f"border-radius:10px;padding:4px;}}"
-            f"QListWidget#TrashTopicList::item{{padding:9px 8px;border-radius:6px;color:{C['ink']};}}"
-            f"QListWidget#TrashTopicList::item:selected{{background:{C['hover_bg']};color:{C['ink']};}}"
-        )
         self.list.itemDoubleClicked.connect(lambda _=None: self._restore())
         lay.addWidget(self.list, 1)
 
@@ -653,7 +608,7 @@ class TrashTopicsDialog(FramelessDialog):
         self.btn_restore = QPushButton("恢复所选")
         self.btn_restore.setObjectName("Primary")
         self.btn_purge = QPushButton("彻底删除")
-        self.btn_purge.setObjectName("Plain")
+        self.btn_purge.setObjectName("Danger")
         btn_close = QPushButton("关闭")
         btn_close.setObjectName("Link")
         for b in (self.btn_restore, self.btn_purge):
@@ -710,6 +665,7 @@ class TrashTopicsDialog(FramelessDialog):
             "彻底删除主题",
             f"「{t.name}」及其中 {cnt} 条笔记会被永久删除，无法恢复。",
             ok_text="彻底删除",
+            danger=True,
         ):
             return
         n = self.lib.purge_topic(tid)
@@ -745,21 +701,6 @@ class DuplicatesDialog(FramelessDialog):
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.tree.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.tree.setStyleSheet(
-            f"QTreeWidget#DupeTree{{background:{C['card']};border:1px solid {C['card_border']};"
-            f"border-radius:10px;padding:4px;}}"
-            f"QTreeWidget#DupeTree::item{{height:26px;}}"
-            f"QTreeWidget#DupeTree::item:selected{{background:{C['hover_bg']};color:{C['ink']};}}"
-            # 复选框也走黑白灰，不用系统默认的蓝色方块
-            f"QTreeWidget#DupeTree::indicator{{width:13px;height:13px;border:1px solid {C['card_border_strong']};"
-            f"border-radius:3px;background:{C['card']};}}"
-            f"QTreeWidget#DupeTree::indicator:checked{{background:{C['ink']};"
-            f"border-color:{C['ink']};}}"
-        )
-        self.tree.header().setStyleSheet(
-            f"QHeaderView::section{{background:{C['hover_bg']};border:none;color:{C['muted']};"
-            f"padding:5px 6px;font-size:11px;}}"
-        )
         lay.addWidget(self.tree, 1)
 
         self.count_label = QLabel("")
@@ -778,7 +719,7 @@ class DuplicatesDialog(FramelessDialog):
         cancel = _button("取消", "Link")
         cancel.clicked.connect(self.reject)
         row.addWidget(cancel)
-        self.btn_ok = _button("移到回收站", "Primary")
+        self.btn_ok = _button("移到回收站", "Danger")
         self.btn_ok.clicked.connect(self._accept)
         row.addWidget(self.btn_ok)
         lay.addLayout(row)

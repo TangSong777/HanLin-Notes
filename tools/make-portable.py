@@ -19,6 +19,7 @@ BUILD = ROOT / "build"
 APP_DIR = DIST / "HanLin-Notes"
 PAYLOAD = BUILD / "payload.zip"
 SETUP_NAME = "HanLin-Notes 安装包"
+ICON = "assets/hanlin-notes.ico"
 
 EXCLUDES = [
     "tkinter",
@@ -75,9 +76,9 @@ def build_main() -> None:
         "--name",
         "HanLin-Notes",
         "--icon",
-        "assets/timo-icon.ico",
+        ICON,
         "--add-data",
-        "assets;assets",
+        f"{ICON};assets",
     ]
     for m in EXCLUDES:
         args += ["--exclude-module", m]
@@ -125,7 +126,9 @@ def build_setup() -> None:
         "--name",
         SETUP_NAME,
         "--icon",
-        "assets/timo-icon.ico",
+        ICON,
+        "--add-data",
+        f"{ICON};assets",
         "--add-data",
         f"{PAYLOAD};.",
     ]

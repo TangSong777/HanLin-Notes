@@ -103,7 +103,7 @@ class NoteCardDelegate(QStyledItemDelegate):
         side = 54 * 2  # 2 倍图，缩放到 54 时更清楚
         pm = pm.scaled(side, side, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
         out = QPixmap(54, 54)
-        out.fill(QColor(C["input_bg"]))
+        out.fill(Qt.transparent)
         p = QPainter(out)
         p.setRenderHint(QPainter.Antialiasing, True)
         path_ = QPainterPath()
@@ -134,19 +134,19 @@ class NoteCardDelegate(QStyledItemDelegate):
         painter.setBrush(QColor(0, 0, 0, 11 if (selected or hovered) else 7))
         painter.drawRoundedRect(
             r.adjusted(-lift, -lift + 1, lift, lift + 2),
-            12 + lift,
-            12 + lift,
+            8 + lift,
+            8 + lift,
         )
 
         if selected:
-            bg, border = QColor(C["checked_bg"]), QColor(C["card_border_strong"])
+            bg, border = QColor(C["card"]), QColor(C["accent"])
         elif hovered:
             bg, border = QColor(C["card_hover"]), QColor(C["card_border"])
         else:
             bg, border = QColor(C["card"]), QColor(C["card_border"])
         painter.setBrush(bg)
         painter.setPen(QPen(border, 1))
-        painter.drawRoundedRect(r, 12, 12)
+        painter.drawRoundedRect(r, 8, 8)
 
         if note.color:
             bar = QRect(r.left(), r.top() + 10, 3, r.height() - 20)
@@ -175,7 +175,7 @@ class NoteCardDelegate(QStyledItemDelegate):
         f_title.setPixelSize(15)
         f_title.setWeight(QFont.DemiBold)
         painter.setFont(f_title)
-        painter.setPen(QColor(C["ink"]))
+        painter.setPen(QColor(C["accent_text"] if selected else C["ink"]))
         fm = QFontMetrics(f_title)
         pin = "  置顶" if note.pinned_at else ""
         t = fm.elidedText(title + pin, Qt.ElideRight, width)
@@ -254,7 +254,7 @@ def _spans(line: str, terms: list[str]) -> list[tuple[int, int]]:
 
 
 def _draw_line(painter, rect, line, term, fm) -> None:
-    """画一行摘要；命中搜索词的部分刷一层底色，其余保持灰色。支持空格分开的多个词。"""
+    """绘制摘要及搜索高亮，支持空格分开的多个词。"""
     terms = [w for w in (term or "").split() if w]
     spans = _spans(line, terms)
     if not spans:
@@ -276,7 +276,7 @@ def _draw_line(painter, rect, line, term, fm) -> None:
         painter.fillRect(
             QRect(x - 1, rect.top() + 3, w + 2, rect.height() - 6), QColor(C["hl_bg"])
         )
-        painter.setPen(QColor(C["ink"]))
+        painter.setPen(QColor(C["accent_text"]))
         painter.drawText(QRect(x, rect.top(), w + 2, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, seg)
         x += w
         pos = e0
@@ -340,15 +340,15 @@ class TopicDelegate(QStyledItemDelegate):
         hovered = bool(option.state & QStyle.State_MouseOver)
         if selected:
             painter.setPen(QPen(QColor(C["card_border_strong"]), 1))
-            painter.setBrush(QColor(C["card"]))
-            painter.drawRoundedRect(r, 10, 10)
+            painter.setBrush(QColor(C["checked_bg"]))
+            painter.drawRoundedRect(r, 8, 8)
         elif hovered:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(C["card_hover"]))
-            painter.drawRoundedRect(r, 10, 10)
+            painter.drawRoundedRect(r, 8, 8)
         if selected:
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(C["ink"]))
+            painter.setBrush(QColor(C["accent"]))
             painter.drawRoundedRect(QRectF(r.left() + 2, r.center().y() - 8, 2.5, 16), 1.2, 1.2)
 
         cnt = self.counts.get(topic.id, 0)
@@ -357,7 +357,8 @@ class TopicDelegate(QStyledItemDelegate):
         name_font.setPixelSize(14)
         name_font.setWeight(QFont.DemiBold if selected else QFont.Normal)
         painter.setFont(name_font)
-        painter.setPen(QColor(C["green_dark"] if selected else (C["faint"] if archived else C["ink"])))
+        name_color = C["faint"] if archived else C["ink"]
+        painter.setPen(QColor(C["accent_text"] if selected else name_color))
         fm = QFontMetrics(name_font)
         locked = bool(getattr(topic, "locked", False))
         name = fm.elidedText(topic.name, Qt.ElideRight, r.width() - 46 - (15 if locked else 0))
@@ -367,7 +368,7 @@ class TopicDelegate(QStyledItemDelegate):
             name,
         )
         if locked:
-            # 自绘小锁（用 emoji 会渲染成彩色，破坏黑白灰）
+            # 自绘小锁与其他次级图标使用同一文字色。
             x = r.left() + 10 + fm.width(name) + 5
             cy = r.center().y()
             painter.setPen(QPen(QColor(C["faint"]), 1.1))
@@ -380,7 +381,7 @@ class TopicDelegate(QStyledItemDelegate):
             meta = QFont(option.font)
             meta.setPixelSize(10)
             painter.setFont(meta)
-            painter.setPen(QColor(C["green"] if selected else C["faint"]))
+            painter.setPen(QColor(C["accent_text"] if selected else C["faint"]))
             painter.drawText(QRect(r.right() - 40, r.top(), 34, r.height()), Qt.AlignRight | Qt.AlignVCenter, str(cnt))
         painter.restore()
 

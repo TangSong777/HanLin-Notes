@@ -72,7 +72,8 @@ from timodesk.importer import import_export
 path, counts = export_zip(lib, "worklib_export.zip")
 shutil.rmtree("worklib2", ignore_errors=True)
 lib2 = Library("worklib2").load()
-rep = import_export(path, lib2)
+# 完整性往返保留所有原始条目，默认去重行为由 test_importdedupe.py 验证。
+rep = import_export(path, lib2, dedupe=False)
 ok.append(("导出导入数量", rep.notes == len(lib.notes) and rep.topics == len(lib.topics)))
 same = sum(1 for nid in lib.notes if lib.content(nid).strip() == lib2.content(nid).strip())
 ok.append(("正文一致", same == len(lib.notes)))
@@ -80,3 +81,4 @@ ok.append(("正文一致", same == len(lib.notes)))
 for name, passed in ok:
     print(("PASS" if passed else "FAIL"), name)
 print("total:", sum(1 for _, p in ok if p), "/", len(ok))
+raise SystemExit(0 if all(passed for _, passed in ok) else 1)

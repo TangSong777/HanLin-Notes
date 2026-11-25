@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
     QDialog,
@@ -21,8 +21,8 @@ from .importer import import_export
 from .settings import Settings
 from .store import Library
 from .ui.main_window import MainWindow
-from .ui.theme import C, app_qss
-from .ui.title_bar import FramelessDialog
+from .ui.theme import apply_theme
+from .ui.title_bar import FramelessDialog, app_icon
 from .ui.dialogs import ProgressDialog, error, info
 from .ui.tray import TrayIcon
 
@@ -122,66 +122,45 @@ class WelcomeDialog(FramelessDialog):
         self.path: str | None = None
         self.setWindowTitle("欢迎使用 HanLin-Notes")
         self.setFixedSize(560, 462)
-        self.setStyleSheet(
-            f"""
-            #DialogBody {{ background:{C['card']}; }}
-            QLabel#Big {{ font-size:30px; color:{C['ink']}; font-weight:600; }}
-            QLabel#Sub {{ color:{C['muted']}; font-size:13px; }}
-            QPushButton#Primary {{
-                background:{C['ink']}; color:{C['on_ink']}; border:none; border-radius:10px;
-                padding:12px 18px; font-size:14px; font-weight:600;
-            }}
-            QPushButton#Primary:hover {{ background:{C['btn_hover']}; }}
-            QPushButton#Plain {{
-                background:{C['card']}; border:1px solid {C['line']}; border-radius:10px;
-                padding:12px 18px; font-size:13px; color:{C['ink']};
-            }}
-            QPushButton#Plain:hover {{ border-color:{C['ink']}; }}
-            """
-        )
         lay = QVBoxLayout(self.body)
         lay.setContentsMargins(40, 28, 40, 30)
         lay.setSpacing(10)
-        title = QLabel("HanLin-Notes", objectName="Big")
+        title = QLabel("HanLin-Notes", objectName="WelcomeTitle")
         lay.addWidget(title)
-        sub = QLabel("本地笔记 · Windows 桌面版", objectName="Sub")
+        sub = QLabel("本地笔记 · Windows 桌面版", objectName="WelcomeSub")
         lay.addWidget(sub)
         lay.addSpacing(14)
         desc = QLabel(
             "数据完全保存在这台电脑上，不需要账号，也不会联网。\n"
             "如果你用过手机上的 Timo，可以直接导入它的「可读数据导出」ZIP，\n"
-            "主题、笔记、图片和账号都会原样搬过来。"
+            "主题、笔记、图片和账号都会原样搬过来。",
+            objectName="WelcomeDesc",
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet(f"color:{C['ink_soft']};font-size:13px;line-height:1.8;")
         lay.addWidget(desc)
         lay.addStretch(1)
 
-        btn_import = QPushButton("导入 Timo 导出包（.zip）", objectName="Primary")
+        btn_import = QPushButton("导入 Timo 导出包（.zip）", objectName="WelcomePrimary")
         btn_import.clicked.connect(self._pick_zip)
         lay.addWidget(btn_import)
 
         row = QHBoxLayout()
-        btn_new = QPushButton("从空白开始", objectName="Plain")
+        btn_new = QPushButton("从空白开始", objectName="WelcomePlain")
         btn_new.clicked.connect(self._new_empty)
         row.addWidget(btn_new)
-        btn_folder = QPushButton("导入解压后的文件夹", objectName="Plain")
+        btn_folder = QPushButton("导入解压后的文件夹", objectName="WelcomePlain")
         btn_folder.clicked.connect(self._pick_folder)
         row.addWidget(btn_folder)
         lay.addLayout(row)
 
         quit_row = QHBoxLayout()
         quit_row.addStretch(1)
-        b = QPushButton("退出")
+        b = QPushButton("退出", objectName="Link")
         b.setFlat(True)
-        b.setStyleSheet(f"color:{C['faint']};border:none;")
         b.clicked.connect(self.reject)
         quit_row.addWidget(b)
         lay.addLayout(quit_row)
 
-        ico = base_dir() / "assets" / "timo-icon.png"
-        if ico.exists():
-            self.setWindowIcon(QIcon(str(ico)))
         self.add_edge()
 
     def _pick_zip(self):
@@ -262,19 +241,12 @@ def run():
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName("")
     app.setOrganizationName("TimoDesktop")
-    app.setStyle("Fusion")
     app.setFont(QFont("Microsoft YaHei UI", 9))
     root = data_dir()
     _install_excepthook(root)
     settings = Settings(root)
-    from .ui.theme import set_mode as _set_mode
-
-    _set_mode(resolve_theme_mode(settings.get("theme_mode", "light")))
-    app.setStyleSheet(app_qss())
-
-    ico = base_dir() / "assets" / "timo-icon.png"
-    if ico.exists():
-        app.setWindowIcon(QIcon(str(ico)))
+    apply_theme(app, resolve_theme_mode(settings.get("theme_mode", "light")))
+    app.setWindowIcon(app_icon())
 
     args = list(sys.argv[1:])
     delete_targets: list[str] = []

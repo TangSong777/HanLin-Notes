@@ -29,7 +29,7 @@ def wheel(dy=120):
     )
 
 
-v = ImageViewer(["assets/timo-icon.png", "assets/timo-icon.png"], 0)
+v = ImageViewer(["tests/fixtures/viewer.png", "tests/fixtures/viewer.png"], 0)
 v.resize(900, 640)
 v.show()
 app.processEvents()

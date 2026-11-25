@@ -58,40 +58,40 @@ def _abs_images(html_text: str, root: Path) -> str:
     return re.sub(r'src="([^"]+)"', repl, html_text)
 
 
-def _css() -> str:
-    """预览用的内联样式，颜色跟随当前皮肤（浅色 / 深色）。"""
-    from .ui.theme import C
-
+def _css(colors: dict[str, str]) -> str:
     return f"""
-body {{ color:{C['ink']}; font-family:"Microsoft YaHei","Segoe UI",sans-serif; font-size:15px;
+body {{ color:{colors['ink']}; font-family:"Microsoft YaHei","Segoe UI",sans-serif; font-size:15px;
        line-height:1.85; margin:0; }}
 h1 {{ font-size:24px; font-weight:600; margin:22px 0 10px; }}
 h2 {{ font-size:19px; font-weight:600; margin:18px 0 8px; }}
-h3 {{ font-size:16px; font-weight:600; margin:14px 0 6px; color:{C['ink_soft']}; }}
+h3 {{ font-size:16px; font-weight:600; margin:14px 0 6px; color:{colors['ink_soft']}; }}
 p {{ margin: 8px 0; }}
-a {{ color:{C['ink']}; text-decoration:underline; text-decoration-color:{C['faint']}; }}
+a {{ color:{colors['accent_text']}; text-decoration:underline; }}
 a.todo {{ text-decoration:none; }}
 li {{ margin:4px 0; }}
-blockquote {{ margin:10px 0; padding:6px 14px; border-left:3px solid {C['card_border_strong']};
-             color:{C['muted']}; background:{C['paper_alt']}; border-radius:0 8px 8px 0; }}
-code {{ background:{C['hover_bg']}; padding:1px 5px; border-radius:4px;
-       font-family:"Cascadia Code",Consolas,monospace; font-size:13px; color:{C['ink_soft']}; }}
-pre {{ background:{C['paper_alt']}; padding:12px 14px; border-radius:8px; border:1px solid {C['card_border']}; }}
+blockquote {{ margin:10px 0; padding:6px 14px; border-left:3px solid {colors['card_border_strong']};
+             color:{colors['muted']}; background:{colors['paper_alt']}; border-radius:0 8px 8px 0; }}
+code {{ background:{colors['card_soft']}; padding:1px 5px; border-radius:4px;
+       font-family:"Cascadia Code",Consolas,monospace; font-size:13px; color:{colors['ink_soft']}; }}
+pre {{ background:{colors['paper_alt']}; padding:12px 14px; border-radius:8px; border:1px solid {colors['card_border']}; }}
 pre code {{ background:transparent; padding:0; }}
 ul, ol {{ margin:8px 0; padding-left:24px; }}
-hr {{ border:none; border-top:1px solid {C['card_border']}; margin:18px 0; }}
+hr {{ border:none; border-top:1px solid {colors['card_border']}; margin:18px 0; }}
 img {{ max-width:100%; border-radius:8px; margin:6px 0; }}
 table {{ border-collapse:collapse; margin:10px 0; }}
-th, td {{ border:1px solid {C['card_border']}; padding:6px 10px; }}
-th {{ background:{C['hover_bg']}; font-weight:600; }}
-.empty {{ color:{C['faint']}; }}
+th, td {{ border:1px solid {colors['card_border']}; padding:6px 10px; }}
+th {{ background:{colors['card_soft']}; font-weight:600; }}
+.empty {{ color:{colors['faint']}; }}
 """
 
 
-def render(text: str, root: str | Path, empty_hint: str = "开始写点什么……") -> str:
+def render(text: str, root: str | Path, empty_hint: str = "开始写点什么……", *, for_print: bool = False) -> str:
+    from .ui.theme import C, LIGHT
+
+    css = _css(LIGHT if for_print else C)
     body = text or ""
     if not body.strip():
-        return f'<html><head><style>{_css()}</style></head><body><p class="empty">{html.escape(empty_hint)}</p></body></html>'
+        return f'<html><head><style>{css}</style></head><body><p class="empty">{html.escape(empty_hint)}</p></body></html>'
     body = _render_tasks(body)
     md = markdown.Markdown(
         extensions=["fenced_code", "tables", "nl2br", "sane_lists"],
@@ -99,4 +99,4 @@ def render(text: str, root: str | Path, empty_hint: str = "开始写点什么…
     )
     inner = md.convert(body)
     inner = _abs_images(inner, Path(root))
-    return f"<html><head><meta charset='utf-8'><style>{_css()}</style></head><body>{inner}</body></html>"
+    return f"<html><head><meta charset='utf-8'><style>{css}</style></head><body>{inner}</body></html>"

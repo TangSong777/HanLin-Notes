@@ -48,40 +48,7 @@ from ..importer import import_export
 from ..store import NOTE_TYPES, TYPE_LABELS, Library, Note
 from .dialogs import DuplicatesDialog, ProgressDialog, confirm, error, info
 from .editor import NoteEditor
-from .theme import C, NOTE_COLORS, app_qss, color_icon, resolve as resolve_theme, set_mode as set_theme_mode
-
-
-class _Body(QWidget):
-    """浅灰画布：在三块面板下方手绘一层柔和投影。
-
-    不用 QGraphicsDropShadowEffect —— 它会把子控件离屏渲染，
-    长列表滚动时既费性能，也会让裁剪区域错位。
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.panes: list[QWidget] = []
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if not self.panes:
-            return
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing, True)
-        p.setBrush(Qt.NoBrush)
-        for pane in self.panes:
-            if pane.isHidden():
-                continue
-            tl = pane.mapTo(self, QPoint(0, 0))
-            r = QRectF(
-                tl.x() + 0.5, tl.y() + 0.5, float(pane.width()) - 1.0, float(pane.height()) - 1.0
-            )
-            for i in range(1, 24):
-                alpha = int(90 * (1.0 - (i - 1) / 23.0) ** 2.4)
-                if alpha <= 0:
-                    continue
-                p.setPen(QPen(QColor(0, 0, 0, alpha), 1))
-                p.drawRoundedRect(r.adjusted(-i, -i + 5, i, i + 7), 15.5 + i, 15.5 + i)
+from .theme import C, NOTE_COLORS, apply_theme, color_icon, is_dark, resolve as resolve_theme
 from .title_bar import (
     FrameEdge,
     HTBOTTOM,
@@ -100,23 +67,83 @@ from .title_bar import (
 from .widgets import AutoFadeScrollBar, NoteCardDelegate, NoteList, TopicDelegate, TopicList
 
 
+class _Body(QWidget):
+    """在三块面板下方手绘一层柔和投影。
+
+    不用 QGraphicsDropShadowEffect —— 它会把子控件离屏渲染，
+    长列表滚动时既费性能，也会让裁剪区域错位。
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.panes: list[QWidget] = []
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self.panes:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setBrush(Qt.NoBrush)
+        radius = 12
+        peak = 24 if is_dark() else 15
+        for pane in self.panes:
+            if pane.isHidden():
+                continue
+            tl = pane.mapTo(self, QPoint(0, 0))
+            r = QRectF(
+                tl.x() + 0.5, tl.y() + 0.5, float(pane.width()) - 1.0, float(pane.height()) - 1.0
+            )
+            for step in range(1, 11):
+                alpha = round(peak * (1.0 - (step - 1) / 10) ** 2)
+                p.setPen(QPen(QColor(0, 0, 0, alpha), 1))
+                p.drawRoundedRect(
+                    r.adjusted(-step, 2 - step, step, step + 2),
+                    radius + step,
+                    radius + step,
+                )
+
+
 class ImportCanceled(Exception):
     """用户在导入进度条上点了取消。"""
 
 
-def _search_icon():
-    """放大镜：1.6px 线条，跟着 muted 色走。"""
-    from PyQt5.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+def _line_icon(kind: str):
+    """绘制导航和搜索使用的 14 px 线条图标。"""
+    from PyQt5.QtGui import QIcon, QPainterPath, QPixmap
 
-    pm = QPixmap(16, 16)
-    pm.fill(Qt.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.Antialiasing, True)
-    p.setPen(QPen(QColor(C["muted"]), 1.6))
-    p.drawEllipse(2, 2, 9, 9)
-    p.drawLine(10, 10, 14, 14)
-    p.end()
-    return QIcon(pm)
+    icon = QIcon()
+    for mode, color in ((QIcon.Normal, C["muted"]), (QIcon.Selected, C["accent_text"])):
+        pixmap = QPixmap(28, 28)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.scale(2, 2)
+        painter.setPen(QPen(QColor(color), 1.25, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        if kind == "search":
+            painter.drawEllipse(QRectF(1.5, 1.5, 8, 8))
+            painter.drawLine(QPoint(9, 9), QPoint(12, 12))
+        elif kind == "all":
+            painter.drawRoundedRect(QRectF(3, 1.5, 8, 11), 1.3, 1.3)
+            painter.drawLine(5, 5, 9, 5)
+            painter.drawLine(5, 8, 9, 8)
+        elif kind == "archived":
+            painter.drawRoundedRect(QRectF(2.5, 4.5, 9, 8), 1.3, 1.3)
+            painter.drawRoundedRect(QRectF(1.5, 1.5, 11, 3), 0.9, 0.9)
+            painter.drawLine(6, 8, 8, 8)
+        else:
+            bin_outline = QPainterPath()
+            bin_outline.moveTo(3, 4)
+            bin_outline.lineTo(4, 12)
+            bin_outline.lineTo(10, 12)
+            bin_outline.lineTo(11, 4)
+            painter.drawPath(bin_outline)
+            painter.drawLine(2, 4, 12, 4)
+            painter.drawLine(5, 2, 9, 2)
+        painter.end()
+        pixmap.setDevicePixelRatio(2)
+        icon.addPixmap(pixmap, mode)
+    return icon
 
 
 class MainWindow(QMainWindow):
@@ -182,9 +209,10 @@ class MainWindow(QMainWindow):
 
         self.nav = QListWidget(objectName="NavList")
         self.nav.setFrameShape(QListWidget.NoFrame)
-        self.nav.setFixedHeight(3 * 34 + 6)
-        for key, label, icon in (("all", "全部笔记", "▤"), ("archived", "归档", "▣"), ("trash", "回收站", "♲")):
-            it = QListWidgetItem(f"{icon}  {label}")
+        self.nav.setFixedHeight(3 * 38)
+        self.nav.setIconSize(QSize(14, 14))
+        for key, label in (("all", "全部笔记"), ("archived", "归档"), ("trash", "回收站")):
+            it = QListWidgetItem(_line_icon(key), label)
             it.setData(Qt.UserRole, key)
             it.setSizeHint(QSize(0, 38))
             self.nav.addItem(it)
@@ -317,7 +345,7 @@ class MainWindow(QMainWindow):
         esc_search.setContext(Qt.WidgetShortcut)
         esc_search.activated.connect(lambda: self._clear_search(focus=True))
         self.search.setPlaceholderText("搜索笔记…  Ctrl+F")
-        self.search.addAction(_search_icon(), QLineEdit.LeadingPosition)
+        self._search_action = self.search.addAction(_line_icon("search"), QLineEdit.LeadingPosition)
         self.search.setTextMargins(4, 0, 0, 0)
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._on_search_changed)
@@ -356,7 +384,7 @@ class MainWindow(QMainWindow):
         self.editor.requestNewNote.connect(self.new_note)
         h.addWidget(self.editor, 1)
 
-        # 三块面板浮在浅灰画布上，投影由 _Body.paintEvent 手绘
+        # 三块面板的投影由 _Body.paintEvent 手绘。
         body.panes = [sidebar, listpane, self.editor]
 
         self.statusBar().hide()
@@ -523,6 +551,7 @@ class MainWindow(QMainWindow):
                     self,
                     "删除主题",
                     f"「{topic.name}」里还有 {cnt} 条笔记，删除主题会把它们一起移到回收站。继续？",
+                    danger=True,
                 ):
                     return
             self.lib.delete_topic(topic.id)
@@ -732,7 +761,7 @@ class MainWindow(QMainWindow):
             return
         from .dialogs import confirm
 
-        if not confirm(self, "移到回收站", f"把 {len(ids)} 条笔记移到回收站？"):
+        if not confirm(self, "移到回收站", f"把 {len(ids)} 条笔记移到回收站？", danger=True):
             return
         self._flush_save()
         for nid in ids:
@@ -1197,7 +1226,9 @@ class MainWindow(QMainWindow):
         if not notes:
             info(self, "清空回收站", "回收站是空的。")
             return
-        if not confirm(self, "清空回收站", f"回收站里的 {len(notes)} 条笔记会被永久删除，无法恢复。继续？"):
+        if not confirm(
+            self, "清空回收站", f"回收站里的 {len(notes)} 条笔记会被永久删除，无法恢复。继续？", danger=True
+        ):
             return
         for n in notes:
             self.lib.delete_note(n.id, hard=True)
@@ -1296,6 +1327,7 @@ class MainWindow(QMainWindow):
             "清理未使用的图片",
             f"有 {len(unused)} 个图片文件没有被任何笔记引用（约 {size / 1024 / 1024:.1f} MB）：\n{sample}\n\n"
             "删除后无法恢复（备份里也不含附件）。继续？",
+            danger=True,
         ):
             return
         n = self.lib.purge_attachments(unused)
@@ -1367,7 +1399,7 @@ class MainWindow(QMainWindow):
         info(self, "已导出", f"已保存到\n{p}{extra}")
 
     def _export_pdf(self, note: Note):
-        """把笔记排成 PDF（用预览同一套渲染）。"""
+        """用 Markdown 预览的排版生成浅底 PDF。"""
         from PyQt5.QtGui import QTextDocument
         from PyQt5.QtPrintSupport import QPrinter
 
@@ -1381,7 +1413,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         doc = QTextDocument()
-        doc.setHtml(render(content, self.lib.root))
+        doc.setHtml(render(content, self.lib.root, for_print=True))
         doc.setDocumentMargin(0)
         printer = QPrinter(QPrinter.HighResolution)
         printer.setOutputFormat(QPrinter.PdfFormat)
@@ -1434,16 +1466,15 @@ class MainWindow(QMainWindow):
 
     def set_theme(self, mode: str) -> None:
         """切换浅色 / 深色 / 跟随系统，立即生效并记住选择。"""
-        set_theme_mode(resolve_theme(mode))
+        apply_theme(QApplication.instance(), resolve_theme(mode))
         self.settings.set("theme_mode", mode)
         if self._theme_group:
             for act in self._theme_group.actions():
                 act.setChecked(act.text() == {"light": "浅色", "dark": "深色", "system": "跟随系统"}[mode])
-        QApplication.instance().setStyleSheet(app_qss())
-        for w in self.findChildren(QWidget):
-            w.style().unpolish(w)
-            w.style().polish(w)
-        self.title_bar.refresh_style()
+        self._search_action.setIcon(_line_icon("search"))
+        for row in range(self.nav.count()):
+            item = self.nav.item(row)
+            item.setIcon(_line_icon(item.data(Qt.UserRole)))
         self.note_list.viewport().update()
         self.topic_list.viewport().update()
         self._edge.update()

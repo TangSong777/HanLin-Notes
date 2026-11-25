@@ -28,7 +28,7 @@ a = lib.add_note(t.id, "article", content="x", title="周报")
 lib.set_content(a.id, "第一段\n\n第二段")
 g = lib.add_note(t.id, "gallery")
 lib.save()
-img = lib.import_attachment("assets/timo-icon.png")
+img = lib.import_attachment("tests/fixtures/viewer.png")
 g.images = [img]
 g.description = "这是说明"
 lib.save()
