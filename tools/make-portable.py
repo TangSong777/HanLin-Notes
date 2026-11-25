@@ -2,7 +2,7 @@
 
 用法：
     python tools/make-portable.py            # 全部重打
-    python tools/make-portable.py --skip-main  # 复用 dist/Timo For Windows
+    python tools/make-portable.py --skip-main  # 复用 dist/HanLin-Notes
 """
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
-APP_DIR = DIST / "Timo For Windows"
+APP_DIR = DIST / "HanLin-Notes"
 PAYLOAD = BUILD / "payload.zip"
-SETUP_NAME = "Timo For Windows 安装包"
+SETUP_NAME = "HanLin-Notes 安装包"
 
 EXCLUDES = [
     "tkinter",
@@ -73,7 +73,7 @@ def build_main() -> None:
     args = [
         "--windowed",
         "--name",
-        "Timo For Windows",
+        "HanLin-Notes",
         "--icon",
         "assets/timo-icon.ico",
         "--add-data",
@@ -83,7 +83,7 @@ def build_main() -> None:
         args += ["--exclude-module", m]
     args.append("run.py")
     pyinstaller(*args)
-    if not (APP_DIR / "Timo For Windows.exe").exists():
+    if not (APP_DIR / "HanLin-Notes.exe").exists():
         raise SystemExit("主程序没有打出来：" + str(APP_DIR))
     prune()
 

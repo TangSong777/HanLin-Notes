@@ -127,7 +127,7 @@ class MainWindow(QMainWindow):
         self.view = ("all", None)  # (kind, topic_id)
         self._pending_save = None
         self._search_buf = ""
-        self.setWindowTitle("Timo For Windows")
+        self.setWindowTitle("HanLin-Notes")
         self.resize(1280, 830)
         self.setMinimumSize(980, 620)
         self.tray = None
@@ -252,7 +252,7 @@ class MainWindow(QMainWindow):
             grp.addAction(act)
         self._theme_group = grp
         menu.addSeparator()
-        menu.addAction("关于 Timo 桌面版", self.show_about)
+        menu.addAction("关于 HanLin-Notes", self.show_about)
         btn_data.setMenu(menu)
         btn_data.setPopupMode(QToolButton.InstantPopup)
         bottom.addWidget(btn_data)
@@ -712,7 +712,7 @@ class MainWindow(QMainWindow):
             names += " 等"
         text = f"{len(due)} 条笔记到时间了：{names}"
         if self.tray is not None:
-            self.tray.showMessage("Timo 提醒", text, QSystemTrayIcon.Information, 8000)
+            self.tray.showMessage("HanLin-Notes 提醒", text, QSystemTrayIcon.Information, 8000)
         if self.isVisible():
             self._toast(text, 6000)
             QApplication.alert(self, 0)  # 任务栏图标闪烁，直到用户回到窗口
@@ -1515,7 +1515,7 @@ class MainWindow(QMainWindow):
             if not self._tray_hinted:
                 self._tray_hinted = True
                 self.tray.showMessage(
-                    "Timo For Windows",
+                    "HanLin-Notes",
                     "已收进托盘。点托盘图标可以重新打开，右键可以退出。",
                     QSystemTrayIcon.Information,
                     4000,

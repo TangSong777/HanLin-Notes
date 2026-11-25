@@ -6,8 +6,8 @@ from ctypes import WINFUNCTYPE, windll, wintypes
 from pathlib import Path
 
 TARGET = Path(sys.argv[1] if len(sys.argv) > 1 else
-              Path(__file__).resolve().parents[1] / "dist" / "Timo For Windows")
-EXE = TARGET / "Timo For Windows.exe"
+              Path(__file__).resolve().parents[1] / "dist" / "HanLin-Notes")
+EXE = TARGET / "HanLin-Notes.exe"
 
 proc = subprocess.Popen([str(EXE)], cwd=str(TARGET))
 print("pid", proc.pid)
@@ -33,7 +33,7 @@ for i in range(30):
     time.sleep(1)
     titles.clear()
     user32.EnumWindows(CB, 0)
-    hits = [t for t in titles if t[1].strip() in ("Timo For Windows", "欢迎使用 Timo 桌面版")]
+    hits = [t for t in titles if t[1].strip() in ("HanLin-Notes", "欢迎使用 Timo 桌面版")]
     if hits:
         print(f"{i + 1}s 找到窗口:", hits)
         break

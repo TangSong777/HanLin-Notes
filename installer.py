@@ -1,6 +1,6 @@
-"""Timo For Windows 便携版安装器。
+"""HanLin-Notes 便携版安装器。
 
-双击后选一个位置，把内置的 payload.zip 解开到 `<位置>/Timo For Windows/`，
+双击后选一个位置，把内置的 payload.zip 解开到 `<位置>/HanLin-Notes/`，
 启动主程序，然后删掉自己。全程无控制台窗口。
 """
 from __future__ import annotations
@@ -27,8 +27,8 @@ from PyQt5.QtWidgets import (
 from timodesk.ui.dialogs import _BTN_QSS, confirm, error
 from timodesk.ui.title_bar import FramelessDialog, _base_dir, app_icon
 
-MAIN_EXE = "Timo For Windows.exe"
-FOLDER_NAME = "Timo For Windows"
+MAIN_EXE = "HanLin-Notes.exe"
+FOLDER_NAME = "HanLin-Notes"
 CREATE_NO_WINDOW = 0x08000000
 
 
@@ -83,8 +83,8 @@ class InstallThread(QThread):
 
 class SetupDialog(FramelessDialog):
     def __init__(self):
-        super().__init__(None, "安装 Timo For Windows")
-        self.setWindowTitle("安装 Timo For Windows")
+        super().__init__(None, "安装 HanLin-Notes")
+        self.setWindowTitle("安装 HanLin-Notes")
         self.setFixedSize(580, 380)
         self._thread = None
         self._installed_to: Path | None = None
@@ -109,7 +109,7 @@ class SetupDialog(FramelessDialog):
         lay.setContentsMargins(34, 26, 34, 26)
         lay.setSpacing(10)
 
-        lay.addWidget(QLabel("Timo For Windows", objectName="Big"))
+        lay.addWidget(QLabel("HanLin-Notes", objectName="Big"))
         hint = QLabel(
             "绿色版，不用安装、不写注册表。解压到下面的文件夹就能用，\n"
             "笔记和图片都保存在这个文件夹的 Data 目录里，整个文件夹可以拷走。"
@@ -262,7 +262,7 @@ def main() -> int:
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
-    app.setApplicationName("Timo For Windows Setup")
+    app.setApplicationName("HanLin-Notes Setup")
     app.setApplicationDisplayName("")
     app.setStyle("Fusion")
     app.setFont(QFont("Microsoft YaHei UI", 9))

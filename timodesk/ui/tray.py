@@ -16,10 +16,10 @@ class TrayIcon(QSystemTrayIcon):
     def __init__(self, window, parent=None):
         super().__init__(self._pick_icon(), parent)
         self.window = window
-        self.setToolTip("Timo For Windows · 本地笔记")
+        self.setToolTip("HanLin-Notes · 本地笔记")
 
         menu = QMenu()
-        act_show = QAction("打开 Timo For Windows", menu)
+        act_show = QAction("打开 HanLin-Notes", menu)
         act_show.triggered.connect(self.show_window)
         menu.addAction(act_show)
 

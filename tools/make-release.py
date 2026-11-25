@@ -3,10 +3,10 @@
 用法：
     python tools/make-release.py 0.2.0
 
-前置：先跑 `python tools/make-portable.py` 打出 `dist/Timo For Windows 安装包.exe`。
+前置：先跑 `python tools/make-portable.py` 打出 `dist/HanLin-Notes 安装包.exe`。
 
 产物（dist/release/<版本>/）：
-    TimoForWindows-<版本>.exe   ← 资产名用 ASCII，避免 GitHub 把中文替换成点
+    HanLinNotes-<版本>.exe   ← 资产名用 ASCII，避免 GitHub 把中文替换成点
     SHA256SUMS.txt
 """
 from __future__ import annotations
@@ -17,11 +17,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "dist" / "Timo For Windows 安装包.exe"
+SRC = ROOT / "dist" / "HanLin-Notes 安装包.exe"
 
 
 def asset_name(version: str) -> str:
-    return f"TimoForWindows-{version}.exe"
+    return f"HanLinNotes-{version}.exe"
 
 
 def project_version() -> str:

@@ -1,4 +1,4 @@
-"""Timo 桌面版启动入口。"""
+"""HanLin-Notes 启动入口。"""
 from __future__ import annotations
 
 import os
@@ -28,7 +28,7 @@ from .ui.tray import TrayIcon
 
 from . import __version__
 
-APP_NAME = "Timo For Windows"
+APP_NAME = "HanLin-Notes"
 APP_VERSION = __version__
 
 
@@ -117,10 +117,10 @@ class WelcomeDialog(FramelessDialog):
     """首次启动：导入 Timo 导出包，或从空库开始。"""
 
     def __init__(self, parent=None):
-        super().__init__(parent, "欢迎使用 Timo 桌面版")
+        super().__init__(parent, "欢迎使用 HanLin-Notes")
         self.choice = "cancel"
         self.path: str | None = None
-        self.setWindowTitle("欢迎使用 Timo 桌面版")
+        self.setWindowTitle("欢迎使用 HanLin-Notes")
         self.setFixedSize(560, 462)
         self.setStyleSheet(
             f"""
@@ -142,7 +142,7 @@ class WelcomeDialog(FramelessDialog):
         lay = QVBoxLayout(self.body)
         lay.setContentsMargins(40, 28, 40, 30)
         lay.setSpacing(10)
-        title = QLabel("Timo", objectName="Big")
+        title = QLabel("HanLin-Notes", objectName="Big")
         lay.addWidget(title)
         sub = QLabel("本地笔记 · Windows 桌面版", objectName="Sub")
         lay.addWidget(sub)

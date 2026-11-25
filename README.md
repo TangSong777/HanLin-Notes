@@ -1,7 +1,8 @@
-# Timo For Windows
+# HanLin-Notes
 
-把 Android 上的 [Timo笔记](https://timo.idik.net/) 搬到 Windows 的本地笔记软件：**数据全在本机，不需要账号，不联网**。
-直接导入手机 App 导出的 ZIP，改完还能再导出回去。
+一个 Windows 本地笔记软件：**数据全在本机，不需要账号，不联网**。
+
+它的**数据格式与交互思路来自 Android 应用 [Timo笔记](https://timo.idik.net/)**——能直接导入手机 App 导出的 ZIP，改完还能再导出回去，方便在电脑上整理、再导回手机。但它是**独立软件**，不是 Timo 的移植版或改包：界面按桌面端重新设计，代码全部重写，没有账号、云同步和内购。
 
 ![主界面](docs/screenshot-main.png)
 
@@ -9,14 +10,14 @@
 
 ![深色模式](docs/screenshot-dark.png)
 
-> 非官方项目，与 Timo 官方无关。本仓库只处理用户自己导出的数据，不包含、也不分发 Timo 的应用本体。
+> 与 Timo 官方无关，也不包含、不分发 Timo 的应用本体。本仓库只处理用户自己导出的数据。
 
 ## 下载
 
 安装包约 104 MB，解开后约 128 MB，双击就能用，不写注册表。
-**Release 里放的就是这个 `.exe`**：下载 → 双击 → 选位置 → 解压 → 自动打开并删掉安装包，之后用文件夹里的 `Timo For Windows.exe`。
+**Release 里放的就是这个 `.exe`**：下载 → 双击 → 选位置 → 解压 → 自动打开并删掉安装包，之后用文件夹里的 `HanLin-Notes.exe`。
 
-到 [Releases](../../releases/latest) 下载 **`Timo For Windows 安装包.exe`**。
+到 [Releases](../../releases/latest) 下载 **`HanLin-Notes 安装包.exe`**。
 
 要求：Windows 10 / 11 64 位。
 
@@ -24,17 +25,17 @@
 
 ### 1. 解包
 
-双击下载的 `Timo For Windows 安装包.exe`：
+双击下载的 `HanLin-Notes 安装包.exe`：
 
-1. 弹出小窗口，显示要解压到的位置，默认是安装包旁边新建的 `Timo For Windows` 文件夹；
-2. 想换地方就点 **更改…** 选一个目录（会在里面再建一个 `Timo For Windows`）；
+1. 弹出小窗口，显示要解压到的位置，默认是安装包旁边新建的 `HanLin-Notes` 文件夹；
+2. 想换地方就点 **更改…** 选一个目录（会在里面再建一个 `HanLin-Notes`）；
 3. 点 **解压到这里**，等进度条走完。
 
 解压完成后：程序会自动打开，**安装包自己删除**，留下的就是一个可以直接用的文件夹：
 
 ```
-Timo For Windows/
-├── Timo For Windows.exe   ← 双击这个启动
+HanLin-Notes/
+├── HanLin-Notes.exe   ← 双击这个启动
 ├── _internal/             ← 运行需要的 Qt 等 dll，别删
 └── Data/                  ← 你的笔记数据
 ```
@@ -45,13 +46,13 @@ Timo For Windows/
 
 ### 2. 第一次打开
 
-双击 `Timo For Windows.exe`，会问你要不要导入手机上的数据：
+双击 `HanLin-Notes.exe`，会问你要不要导入手机上的数据：
 
 1. 打开手机上的 Timo笔记 → 设置 → 导出可读副本，得到 `Timo_Export_xxxx.zip`；
 2. 在欢迎页点 **导入 Timo 导出包（.zip）**，选中那个 ZIP；
 3. 等几秒，主题、笔记、图片、账号就都进来了。
 
-也可以跳过欢迎页，之后从侧栏底部的 `⋯` 菜单导入；把 ZIP 拖到主窗口里、或者拖到 `Timo For Windows.exe` 图标上，都能导入。
+也可以跳过欢迎页，之后从侧栏底部的 `⋯` 菜单导入；把 ZIP 拖到主窗口里、或者拖到 `HanLin-Notes.exe` 图标上，都能导入。
 
 库里已经有笔记时，导入会问一句：
 
@@ -69,13 +70,13 @@ Data/
 └── attachments/      # 图片等附件原件
 ```
 
-要换电脑或备份，直接复制整个 `Timo For Windows` 文件夹即可；想回手机上用，从 `⋯` 菜单 **导出为 Timo ZIP**，再把 ZIP 导回手机。
+要换电脑或备份，直接复制整个 `HanLin-Notes` 文件夹即可；想回手机上用，从 `⋯` 菜单 **导出为 Timo ZIP**，再把 ZIP 导回手机。
 
 ### 4. 托盘
 
 - 点窗口右上角的 **✕** 不会退出，而是收进系统托盘（右下角时间旁边）；
 - **单击托盘图标** 重新打开窗口；
-- **右键托盘图标**：打开 Timo For Windows / 新建笔记 / 打开数据文件夹 / 退出。
+- **右键托盘图标**：打开 HanLin-Notes / 新建笔记 / 打开数据文件夹 / 退出。
 
 ## 功能
 
@@ -132,8 +133,8 @@ python tools/make-portable.py
 
 产物：
 
-- `dist/Timo For Windows/Timo For Windows.exe` —— 解压后的程序本体
-- `dist/Timo For Windows 安装包.exe` —— 用来分发的单文件安装包
+- `dist/HanLin-Notes/HanLin-Notes.exe` —— 解压后的程序本体
+- `dist/HanLin-Notes 安装包.exe` —— 用来分发的单文件安装包
 
 ## 开发
 

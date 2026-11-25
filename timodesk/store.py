@@ -1,4 +1,4 @@
-"""Timo 桌面版的数据层。
+"""HanLin-Notes 的数据层。
 
 设计原则
 --------
@@ -299,7 +299,7 @@ class Library:
         self.attachments_dir.mkdir(parents=True, exist_ok=True)
         payload = {
             "version": 1,
-            "app": "Timo Desktop",
+            "app": "HanLin-Notes",
             "savedAt": now_iso(),
             "topics": [
                 self.topics[k].to_json()

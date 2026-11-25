@@ -560,7 +560,7 @@ class AboutDialog(FramelessDialog):
         lay.setContentsMargins(32, 24, 32, 22)
         lay.setSpacing(10)
 
-        title = QLabel("Timo For Windows")
+        title = QLabel("HanLin-Notes")
         title.setStyleSheet(f"font-size:19px;font-weight:600;color:{C['ink']};")
         lay.addWidget(title)
 
