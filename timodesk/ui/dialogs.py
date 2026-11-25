@@ -420,6 +420,16 @@ class SettingsDialog(FramelessDialog):
         self.cmb_theme.setCurrentIndex(idx)
         row("外观", self.cmb_theme)
 
+        from .theme import available_text_fonts
+
+        self.cmb_font = QComboBox()
+        for label, family in available_text_fonts():
+            self.cmb_font.addItem(label, family)
+        self.cmb_font.setCurrentIndex(
+            max(0, self.cmb_font.findData(settings.get("font_family", "Microsoft YaHei")))
+        )
+        row("正文字体", self.cmb_font)
+
         self.spin_trash = QSpinBox()
         self.spin_trash.setRange(0, 3650)
         self.spin_trash.setValue(int(settings.get("trash_days", 0) or 0))
@@ -457,6 +467,7 @@ class SettingsDialog(FramelessDialog):
     def apply(self) -> None:
         """把当前控件值写进 settings（关闭时调用）。"""
         self.settings.set("theme_mode", self.cmb_theme.currentData())
+        self.settings.set("font_family", self.cmb_font.currentData())
         self.settings.set("trash_days", int(self.spin_trash.value()))
         self.settings.set("sort_mode", self.cmb_sort.currentData())
 

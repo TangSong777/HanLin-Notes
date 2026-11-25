@@ -162,7 +162,9 @@ class MarkdownEdit(QPlainTextEdit):
         self.setObjectName("Editor")
         self.setPlaceholderText(placeholder)
         self.setTabChangesFocus(True)
-        f = QFont("Microsoft YaHei")
+        from .theme import C
+
+        f = QFont(C["font_text"])
         f.setPixelSize(15)
         self.setFont(f)
 

@@ -15,6 +15,7 @@ LIGHT = {
     "card_border": "#eadfd7",
     "card_border_strong": "#dcccc2",
     "ink": "#292424",
+    "font_text": "Microsoft YaHei",
     "ink_soft": "#514541",
     "muted": "#736460",
     "faint": "#8f7c76",
@@ -49,6 +50,7 @@ DARK = {
     "card_border": "#332b27",
     "card_border_strong": "#4a3c36",
     "ink": "#f2eae4",
+    "font_text": "Microsoft YaHei",
     "ink_soft": "#d5c6be",
     "muted": "#b5a49c",
     "faint": "#a08e84",
@@ -193,6 +195,11 @@ NOTE_COLORS = [
 ]
 
 FONT_UI = '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif'
+TEXT_FONT_CHOICES = [
+    ("微软雅黑", "Microsoft YaHei"),
+    ("宋体", "SimSun"),
+    ("悦黑", "MF YueHei (Noncommercial)"),
+]
 FONT_TEXT = '"Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif'
 FONT_MONO = '"Cascadia Code", "Consolas", "JetBrains Mono", monospace'
 
@@ -289,7 +296,7 @@ QToolButton#CloseBtn:hover, QToolButton#DialogClose:hover {{
 
 /* ---------- 侧栏 ---------- */
 #Brand {{
-    font-family: {FONT_TEXT};
+    font-family: {C['font_text']};
     font-size: {int(23 * s)}px;
     font-weight: 600;
     color: {C['ink']};
@@ -394,13 +401,13 @@ QLineEdit#NoteTitle:focus {{ border-bottom-color: {C['accent_text']}; }}
 
 QPlainTextEdit#Editor {{
     background: {C['card']}; border: none; padding: 18px 26px;
-    font-family: {FONT_TEXT}; font-size: {int(15 * s)}px; color: {C['ink']};
+    font-family: {C['font_text']}; font-size: {int(15 * s)}px; color: {C['ink']};
     selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
 QTextBrowser#Preview {{
     background: {C['paper_alt']}; border: none; border-left: 1px solid {C['line']};
     padding: 18px 26px;
-    font-family: {FONT_TEXT}; font-size: {int(15 * s)}px; color: {C['ink']};
+    font-family: {C['font_text']}; font-size: {int(15 * s)}px; color: {C['ink']};
     selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
 
@@ -584,3 +591,23 @@ def resolve(mode: str) -> str:
     if mode == "system":
         return system_mode()
     return "dark" if mode == "dark" else "light"
+
+
+def available_text_fonts() -> list[tuple[str, str]]:
+    """系统里实际装了的正文字体（悦黑是可选字体，没装就不列）。"""
+    from PyQt5.QtGui import QFontDatabase
+
+    installed = set(QFontDatabase().families())
+    out = []
+    for label, family in TEXT_FONT_CHOICES:
+        if family in installed or (family == "Microsoft YaHei" and "Microsoft YaHei UI" in installed):
+            out.append((label, family))
+    return out or [("微软雅黑", "Microsoft YaHei")]
+
+
+def set_text_font(family: str) -> str:
+    """切换正文/预览字体，返回实际生效的字体名。"""
+    valid = {f for _, f in available_text_fonts()}
+    family = family if family in valid else "Microsoft YaHei"
+    C["font_text"] = family
+    return family

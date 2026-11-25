@@ -246,6 +246,8 @@ def run():
     _install_excepthook(root)
     settings = Settings(root)
     apply_theme(app, resolve_theme_mode(settings.get("theme_mode", "light")))
+    from .ui.theme import set_text_font
+    set_text_font(settings.get("font_family", "Microsoft YaHei"))
     app.setWindowIcon(app_icon())
 
     args = list(sys.argv[1:])

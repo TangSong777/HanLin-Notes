@@ -1261,6 +1261,25 @@ class MainWindow(QMainWindow):
         want_sort = dlg.cmb_sort.currentData()
         if want_sort != getattr(self, "sort_mode", "updated"):
             self.set_sort(want_sort)
+        want_font = dlg.cmb_font.currentData()
+        if want_font != self.settings.get("font_family", "Microsoft YaHei"):
+            self.apply_font(want_font)
+
+    def apply_font(self, family: str) -> None:
+        """切换正文/预览字体：改 QSS + 给列表和编辑器换字体。"""
+        from PyQt5.QtGui import QFont
+
+        from .theme import app_qss, set_text_font
+
+        family = set_text_font(family)
+        self.settings.set("font_family", family)
+        QApplication.instance().setStyleSheet(app_qss())
+        for w in (self.note_list, self.topic_list, self.editor):
+            w.setFont(QFont(family))
+        self.note_list.viewport().update()
+        self.topic_list.viewport().update()
+        self.editor.refresh_theme()
+        self.update()
 
     def dedupe_dialog(self):
         """找出正文完全相同的笔记，勾选后移到回收站。"""
