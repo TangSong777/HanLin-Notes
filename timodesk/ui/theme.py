@@ -195,10 +195,12 @@ NOTE_COLORS = [
 ]
 
 FONT_UI = '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif'
+# 每项是 (显示名, 候选字体族)。Qt 里的名字和 Windows 字体名不一定一致，
+# 例如「宋体」在 QFontDatabase 里就叫「宋体」而不是 SimSun。
 TEXT_FONT_CHOICES = [
-    ("微软雅黑", "Microsoft YaHei"),
-    ("宋体", "SimSun"),
-    ("悦黑", "MF YueHei (Noncommercial)"),
+    ("微软雅黑", ("微软雅黑", "Microsoft YaHei", "Microsoft YaHei UI")),
+    ("宋体", ("宋体", "SimSun")),
+    ("悦黑", ("造字工房悦黑（非商用）常规体", "造字工房悦黑体验版细体", "MF YueHei (Noncommercial)")),
 ]
 FONT_TEXT = '"Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif'
 FONT_MONO = '"Cascadia Code", "Consolas", "JetBrains Mono", monospace'
@@ -594,20 +596,23 @@ def resolve(mode: str) -> str:
 
 
 def available_text_fonts() -> list[tuple[str, str]]:
-    """系统里实际装了的正文字体（悦黑是可选字体，没装就不列）。"""
+    """系统里实际装了的正文字体，返回 (显示名, Qt 字体族名)。"""
     from PyQt5.QtGui import QFontDatabase
 
     installed = set(QFontDatabase().families())
     out = []
-    for label, family in TEXT_FONT_CHOICES:
-        if family in installed or (family == "Microsoft YaHei" and "Microsoft YaHei UI" in installed):
-            out.append((label, family))
-    return out or [("微软雅黑", "Microsoft YaHei")]
+    for label, candidates in TEXT_FONT_CHOICES:
+        for family in candidates:
+            if family in installed:
+                out.append((label, family))
+                break
+    return out or [("微软雅黑", "微软雅黑")]
 
 
 def set_text_font(family: str) -> str:
-    """切换正文/预览字体，返回实际生效的字体名。"""
+    """切换正文/预览字体，返回实际生效的字体族名。"""
     valid = {f for _, f in available_text_fonts()}
-    family = family if family in valid else "Microsoft YaHei"
+    if family not in valid:
+        family = next(iter(valid), "微软雅黑")
     C["font_text"] = family
     return family

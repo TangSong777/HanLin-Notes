@@ -17,6 +17,8 @@ from PyQt5.QtCore import (
 )
 from PyQt5.QtGui import QColor, QCursor, QKeySequence, QPainter, QPen
 from PyQt5.QtWidgets import (
+    QPlainTextEdit,
+    QTextBrowser,
     QActionGroup,
     QApplication,
     QFileDialog,
@@ -1274,8 +1276,13 @@ class MainWindow(QMainWindow):
         family = set_text_font(family)
         self.settings.set("font_family", family)
         QApplication.instance().setStyleSheet(app_qss())
+        font = QFont(family)
         for w in (self.note_list, self.topic_list, self.editor):
-            w.setFont(QFont(family))
+            w.setFont(font)
+        # 编辑器里的正文框/预览框是构造时设的字体，这里一并换掉
+        for w in self.editor.findChildren(QWidget):
+            if isinstance(w, (QPlainTextEdit, QTextBrowser)):
+                w.setFont(font)
         self.note_list.viewport().update()
         self.topic_list.viewport().update()
         self.editor.refresh_theme()
