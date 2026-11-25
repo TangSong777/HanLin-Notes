@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
+from PyQt5.QtTest import QTest
 from PyQt5.QtWidgets import QApplication
 
 from timodesk.store import Library
@@ -138,6 +139,28 @@ def main():
     w.search.setText("")
     w._apply_search()
     app.processEvents()
+
+    # ---- 打开文档、返回笔记库、批量点选 ----
+    w._reload_notes(select_id=n.id)
+    app.processEvents()
+    item = w.note_list.currentItem()
+    rect = w.note_list.visualItemRect(item)
+    QTest.mouseClick(w.note_list.viewport(), Qt.LeftButton, pos=rect.center())
+    app.processEvents()
+    check("单击卡片打开文档", w.workspace.currentWidget() is w.document_page and w.editor.note.id == n.id)
+    QTest.keyClick(w.editor.edit, Qt.Key_F, Qt.ControlModifier)
+    check("正文中的 Ctrl+F 打开文内查找", w.editor.find_bar.isVisible())
+    QTest.keyClick(w.editor.find_edit, Qt.Key_Escape)
+    QTest.mouseClick(w.editor.mode_buttons["preview"], Qt.LeftButton)
+    check("阅读模式显示预览", w.editor.preview.isVisible() and not w.editor.edit.isVisible())
+    QTest.mouseClick(w.back_button, Qt.LeftButton)
+    app.processEvents()
+    check("返回保留卡片选择", w.workspace.currentWidget() is w.library_page and w.note_list.currentItem() is item)
+    QTest.mouseClick(w.selection_button, Qt.LeftButton)
+    for i in (0, 1):
+        point = w.note_list.visualItemRect(w.note_list.item(i)).center()
+        QTest.mouseClick(w.note_list.viewport(), Qt.LeftButton, pos=point)
+    check("整理模式点选两条", len(w.note_list.selectedItems()) == 2 and w.batch_button.isVisible())
 
     # ---- 保存后重新加载 ----
     lib.save()

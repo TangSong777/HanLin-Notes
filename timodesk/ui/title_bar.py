@@ -18,7 +18,7 @@ from PyQt5.QtGui import (
     QPen,
     QRegion,
 )
-from PyQt5.QtWidgets import QDialog, QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
 from .theme import C
 
@@ -81,9 +81,9 @@ class FrameEdge(QWidget):
 
 
 class TitleBar(QWidget):
-    HEIGHT = 44
+    HEIGHT = 58
 
-    def __init__(self, window):
+    def __init__(self, window, commands: QWidget):
         super().__init__(window)
         self.win = window
         self._press_global: QPoint | None = None
@@ -91,25 +91,36 @@ class TitleBar(QWidget):
         self._dragging = False
 
         self.setObjectName("TitleBar")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedHeight(self.HEIGHT)
 
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(16, 0, 10, 0)
-        lay.setSpacing(8)
-
+        lay.setContentsMargins(0, 0, 10, 0)
+        lay.setSpacing(12)
+        brand = QWidget()
+        brand.setFixedWidth(213)
+        identity = QHBoxLayout(brand)
+        identity.setContentsMargins(24, 0, 10, 0)
+        identity.setSpacing(9)
         icon = QLabel(objectName="TitleIcon")
-        icon.setPixmap(app_icon().pixmap(QSize(20, 20)))
-        icon.setFixedSize(20, 20)
-        lay.addWidget(icon)
-
-        lay.addWidget(QLabel("HanLin-Notes", objectName="TitleBrand"))
-        lay.addStretch(1)
+        icon.setPixmap(app_icon().pixmap(QSize(28, 28)))
+        icon.setFixedSize(28, 28)
+        identity.addWidget(icon)
+        identity.addWidget(QLabel("HanLin-Notes", objectName="TitleBrand"))
+        identity.addStretch(1)
+        lay.addWidget(brand)
+        lay.addSpacing(12)
+        lay.addWidget(commands, 1)
+        lay.addSpacing(4)
 
         self.btn_min = self._win_button("─", "最小化", self.win.showMinimized)
         self.btn_max = self._win_button("□", "最大化", self.win.toggle_maximized)
         self.btn_close = self._win_button("✕", "关闭", self.win.close, "CloseBtn")
-        for b in (self.btn_min, self.btn_max, self.btn_close):
-            lay.addWidget(b)
+        window_buttons = QHBoxLayout()
+        window_buttons.setSpacing(2)
+        for button in (self.btn_min, self.btn_max, self.btn_close):
+            window_buttons.addWidget(button)
+        lay.addLayout(window_buttons)
 
         self.sync_max_button()
 
@@ -118,7 +129,7 @@ class TitleBar(QWidget):
         b = QToolButton(objectName=name)
         b.setText(text)
         b.setToolTip(tip)
-        b.setFixedSize(34, 26)
+        b.setFixedSize(32, 32)
         b.setCursor(Qt.ArrowCursor)
         b.clicked.connect(slot)
         b.installEventFilter(self)
@@ -176,7 +187,7 @@ class TitleBar(QWidget):
 class DialogTitleBar(QWidget):
     """无边框对话框的顶部条：标题 + 关闭，可拖动。"""
 
-    HEIGHT = 40
+    HEIGHT = 44
 
     def __init__(self, dialog, text: str):
         super().__init__(dialog)
@@ -186,7 +197,7 @@ class DialogTitleBar(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedHeight(self.HEIGHT)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(16, 0, 10, 0)
+        lay.setContentsMargins(18, 0, 10, 0)
         lay.setSpacing(6)
         lay.addWidget(QLabel(text, objectName="DialogTitle"))
         lay.addStretch(1)
@@ -242,3 +253,20 @@ class FramelessDialog(QDialog):
     def showEvent(self, ev):  # noqa: N802
         super().showEvent(ev)
         self.setMask(rounded_mask(self.width(), self.height(), self.RADIUS))
+
+
+class BrandPanel(QFrame):
+    """首次打开与便携安装共享的品牌栏。"""
+
+    def __init__(self):
+        super().__init__(objectName="BrandPanel")
+        self.setFixedWidth(184)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 16, 14, 16)
+        layout.setSpacing(12)
+        layout.setAlignment(Qt.AlignCenter)
+        icon = QLabel()
+        icon.setPixmap(app_icon().pixmap(QSize(74, 74)))
+        layout.addWidget(icon, alignment=Qt.AlignCenter)
+        title = QLabel("HanLin-Notes", objectName="BrandPanelName")
+        layout.addWidget(title, alignment=Qt.AlignCenter)

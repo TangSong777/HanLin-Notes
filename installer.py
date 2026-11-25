@@ -26,7 +26,7 @@ from PyQt5.QtWidgets import (
 
 from timodesk.ui.dialogs import confirm, error
 from timodesk.ui.theme import apply_theme, system_mode
-from timodesk.ui.title_bar import FramelessDialog, _base_dir, app_icon
+from timodesk.ui.title_bar import BrandPanel, FramelessDialog, _base_dir, app_icon
 
 MAIN_EXE = "HanLin-Notes.exe"
 FOLDER_NAME = "HanLin-Notes"
@@ -86,25 +86,29 @@ class SetupDialog(FramelessDialog):
     def __init__(self):
         super().__init__(None, "安装 HanLin-Notes")
         self.setWindowTitle("安装 HanLin-Notes")
-        self.setFixedSize(580, 380)
+        self.setFixedSize(660, 354)
         self._thread = None
         self._installed_to: Path | None = None
 
-        lay = QVBoxLayout(self.body)
-        lay.setContentsMargins(34, 26, 34, 26)
+        split = QHBoxLayout(self.body)
+        split.setContentsMargins(1, 0, 1, 1)
+        split.setSpacing(0)
+        split.addWidget(BrandPanel())
+        lay = QVBoxLayout()
+        lay.setContentsMargins(28, 23, 28, 23)
         lay.setSpacing(10)
+        split.addLayout(lay, 1)
 
-        lay.addWidget(QLabel("HanLin-Notes", objectName="SetupTitle"))
+        lay.addWidget(QLabel("解压便携版", objectName="SetupTitle"))
         hint = QLabel(
-            "绿色版，不用安装、不写注册表。解压到下面的文件夹就能用，\n"
-            "笔记和图片都保存在这个文件夹的 Data 目录里，整个文件夹可以拷走。"
+            "解压后直接打开。笔记和图片保存在同一文件夹的 Data 目录里，方便整份搬走。"
         )
         hint.setObjectName("SetupHint")
         hint.setWordWrap(True)
         lay.addWidget(hint)
         lay.addSpacing(8)
 
-        lay.addWidget(QLabel("安装到", objectName="SetupHint"))
+        lay.addWidget(QLabel("解压位置", objectName="FieldHeading"))
         row = QHBoxLayout()
         row.setSpacing(8)
         self.path_box = QLineEdit(str(default_target()), objectName="PathBox")

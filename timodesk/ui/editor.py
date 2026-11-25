@@ -14,9 +14,6 @@ import shutil
 from pathlib import Path
 
 from PyQt5.QtCore import (
-    QAbstractAnimation,
-    QEasingCurve,
-    QPropertyAnimation,
     QSize,
     Qt,
     QTimer,
@@ -41,7 +38,6 @@ from PyQt5.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
-    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -52,6 +48,7 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QScrollArea,
     QShortcut,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStackedWidget,
@@ -66,8 +63,8 @@ from ..render import TASK_RE, render
 from ..store import date_countdown, TYPE_LABELS, Library, Note
 from .dialogs import error as dlg_error
 from .theme import C, NOTE_COLORS, color_icon
-from .widgets import AutoFadeScrollBar
-from .widgets import human_time
+from .visuals import glyph
+from .widgets import AutoFadeScrollBar, human_time
 
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
@@ -311,6 +308,7 @@ class NoteEditor(QWidget):
     contentChanged = pyqtSignal(str, str, str)  # note_id, content, title
     metaChanged = pyqtSignal()
     requestNewNote = pyqtSignal()
+    actionsRequested = pyqtSignal()
 
     def __init__(self, lib: Library, parent=None):
         super().__init__(parent)
@@ -319,93 +317,92 @@ class NoteEditor(QWidget):
         self._loading = False
         self._dirty = False
         self._mode = "split"
-        self.setObjectName("EditorPane")
+        self.setObjectName("NotePaper")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self._build_ui()
-        self.top_bar.setVisible(False)
+        self.top_bar.hide()
+        self.status_bar.hide()
+        self._sync_editor_icons()
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(280)
         self._preview_timer.timeout.connect(self._refresh_preview)
 
-    # ================= 布局 =================
+    # ================= 文档 =================
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(1, 1, 1, 1)
         root.setSpacing(0)
 
-        # ---- 顶栏 ----
-        top = QWidget(objectName="EditorTopBar")
-        self.top_bar = top
-        tl = QHBoxLayout(top)
-        tl.setContentsMargins(22, 11, 16, 9)
-        tl.setSpacing(6)
-        self.badge = QLabel("便签", objectName="TypeBadge")
-        tl.addWidget(self.badge)
-        self.save_state = QLabel("", objectName="SaveState")
-        tl.addWidget(self.save_state)
-        tl.addStretch(1)
-        self.btn_pin = QToolButton()
+        self.top_bar = QWidget(objectName="DocumentHeading")
+        heading = QVBoxLayout(self.top_bar)
+        heading.setContentsMargins(24, 15, 20, 14)
+        heading.setSpacing(6)
+        topline = QHBoxLayout()
+        topline.setSpacing(4)
+        self.type_icon = QLabel(objectName="DocumentTypeIcon")
+        self.type_icon.setFixedSize(25, 25)
+        self.type_icon.setAlignment(Qt.AlignCenter)
+        topline.addWidget(self.type_icon)
+        self.badge = QLabel(objectName="DocumentType")
+        topline.addWidget(self.badge)
+        topline.addStretch(1)
+
+        self.btn_pin = QToolButton(objectName="NoteAction")
         self.btn_pin.setText("置顶")
+        self.btn_pin.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.btn_pin.setCheckable(True)
         self.btn_pin.clicked.connect(self._toggle_pin)
-        tl.addWidget(self.btn_pin)
-        self.btn_color = QToolButton()
-        self.btn_color.setText("颜色")
+        topline.addWidget(self.btn_pin)
+        self.btn_color = QToolButton(objectName="NoteAction")
+        self.btn_color.setText("标色")
+        self.btn_color.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.btn_color.setPopupMode(QToolButton.InstantPopup)
-        cmenu = QMenu(self)
-        for name, col in NOTE_COLORS:
-            a = cmenu.addAction(color_icon(col), name)
-            a.setData(col)
-        cmenu.triggered.connect(lambda a: self._set_color(a.data()))
-        self.btn_color.setMenu(cmenu)
-        tl.addWidget(self.btn_color)
-        self.btn_remind = QToolButton()
+        colors = QMenu(self)
+        for name, color in NOTE_COLORS:
+            act = colors.addAction(color_icon(color), name)
+            act.setData(color)
+        colors.triggered.connect(lambda action: self._set_color(action.data()))
+        self.btn_color.setMenu(colors)
+        topline.addWidget(self.btn_color)
+        self.btn_remind = QToolButton(objectName="NoteAction")
         self.btn_remind.setText("提醒")
+        self.btn_remind.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.btn_remind.setToolTip("设置提醒")
         self.btn_remind.clicked.connect(self._on_remind)
-        tl.addWidget(self.btn_remind)
-        self.btn_more = QToolButton()
+        topline.addWidget(self.btn_remind)
+        self.btn_more = QToolButton(objectName="NoteAction")
         self.btn_more.setText("⋯")
-        more = QMenu(self)
-        more.addAction("归档 / 取消归档", self._toggle_archive)
-        more.addAction("复制笔记", self._duplicate)
-        more.addSeparator()
-        more.addAction("删除到回收站", self._delete)
-        self.btn_more.setMenu(more)
-        tl.addWidget(self.btn_more)
-        root.addWidget(top)
+        self.btn_more.setToolTip("笔记操作")
+        self.btn_more.setAccessibleName("笔记操作")
+        self.btn_more.clicked.connect(self.actionsRequested.emit)
+        topline.addWidget(self.btn_more)
+        heading.addLayout(topline)
 
-        # ---- 标题 ----
         self.title_wrap = QWidget()
-        tw = QHBoxLayout(self.title_wrap)
-        tw.setContentsMargins(22, 6, 26, 2)
+        title_row = QHBoxLayout(self.title_wrap)
+        title_row.setContentsMargins(0, 0, 0, 0)
         self.title_edit = QLineEdit(objectName="NoteTitle")
-        self.title_edit.setPlaceholderText("标题")
+        self.title_edit.setPlaceholderText("输入标题")
         self.title_edit.textChanged.connect(self._on_title_changed)
-        tw.addWidget(self.title_edit)
-        root.addWidget(self.title_wrap)
+        title_row.addWidget(self.title_edit)
+        heading.addWidget(self.title_wrap)
+        self.generated_title = QLabel(objectName="GeneratedTitle")
+        self.generated_title.setTextFormat(Qt.PlainText)
+        self.generated_title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        heading.addWidget(self.generated_title)
+        root.addWidget(self.top_bar)
 
-        # ---- 页面栈 ----
         self.stack = QStackedWidget()
         root.addWidget(self.stack, 1)
-
-        # 空状态
         self.page_empty = QWidget()
-        el = QVBoxLayout(self.page_empty)
-        el.setAlignment(Qt.AlignCenter)
-        icon = QLabel("✎")
-        icon.setObjectName("EmptyIcon")
-        icon.setAlignment(Qt.AlignCenter)
-        el.addWidget(icon)
-        hint = QLabel("选择一条笔记，或新建一条")
-        hint.setAlignment(Qt.AlignCenter)
-        hint.setObjectName("EmptyHint")
-        el.addWidget(hint)
-        b = QPushButton("新建笔记")
-        b.setFixedWidth(132)
-        b.clicked.connect(self.requestNewNote.emit)
-        el.addWidget(b, alignment=Qt.AlignCenter)
+        empty_layout = QVBoxLayout(self.page_empty)
+        empty_layout.setAlignment(Qt.AlignCenter)
+        hint = QLabel("选择或新建一条笔记", objectName="EmptyHint")
+        empty_layout.addWidget(hint, alignment=Qt.AlignCenter)
+        create = QPushButton("新建笔记", objectName="Primary")
+        create.clicked.connect(self.requestNewNote.emit)
+        empty_layout.addWidget(create, alignment=Qt.AlignCenter)
         self.stack.addWidget(self.page_empty)
 
         self._build_text_page()
@@ -414,110 +411,142 @@ class NoteEditor(QWidget):
         self._build_link_page()
         self._build_date_page()
 
-        # ---- 底部 ----
-        bottom = QWidget()
-        bl = QHBoxLayout(bottom)
-        bl.setContentsMargins(22, 3, 18, 8)
-        self.word_label = QLabel("")
-        self.word_label.setObjectName("WordLabel")
-        bl.addWidget(self.word_label)
-        bl.addStretch(1)
-        self.time_label = QLabel("")
-        self.time_label.setObjectName("TimeLabel")
-        bl.addWidget(self.time_label)
-        root.addWidget(bottom)
+        self.status_bar = QFrame(objectName="DocumentFooter")
+        status = QHBoxLayout(self.status_bar)
+        status.setContentsMargins(24, 0, 20, 0)
+        status.setSpacing(12)
+        self.status_bar.setFixedHeight(33)
+        self.word_label = QLabel(objectName="WordLabel")
+        self.save_state = QLabel(objectName="SaveState")
+        self.time_label = QLabel(objectName="TimeLabel")
+        status.addWidget(self.word_label)
+        status.addWidget(self.save_state)
+        status.addStretch(1)
+        status.addWidget(self.time_label)
+        root.addWidget(self.status_bar)
 
     def _build_text_page(self):
         self.page_text = QWidget()
-        pl = QVBoxLayout(self.page_text)
-        pl.setContentsMargins(0, 0, 0, 0)
-        pl.setSpacing(0)
-
+        layout = QVBoxLayout(self.page_text)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         self.format_bar = QFrame(objectName="FormatBar")
-        fb = QHBoxLayout(self.format_bar)
-        fb.setContentsMargins(10, 4, 10, 4)
-        fb.setSpacing(2)
-        _groups = (3, 5, 8)
-        for _i, (text, tip, cb) in enumerate([
+        toolbar = QHBoxLayout(self.format_bar)
+        toolbar.setContentsMargins(16, 6, 15, 6)
+        toolbar.setSpacing(5)
+
+        self.format_tools = QWidget()
+        tools = QHBoxLayout(self.format_tools)
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(2)
+        actions = (
             ("B", "粗体 Ctrl+B", lambda: self._wrap("**", "**")),
             ("I", "斜体 Ctrl+I", lambda: self._wrap("*", "*")),
             ("S", "删除线", lambda: self._wrap("~~", "~~")),
             ("H1", "一级标题", lambda: self._prefix("# ")),
             ("H2", "二级标题", lambda: self._prefix("## ")),
             ("•", "列表", lambda: self._prefix("- ")),
-            ("☑", "待办", lambda: self._prefix("- [ ] ")),
-            ("❝", "引用", lambda: self._prefix("> ")),
+            ("select", "待办 Ctrl+Shift+T", lambda: self._prefix("- [ ] ")),
+            ("“", "引用", lambda: self._prefix("> ")),
             ("</>", "代码块", lambda: self._wrap("\n```\n", "\n```\n")),
-            ("🔗", "链接 Ctrl+K", self._insert_link),
-            ("🖼", "插入图片", self._pick_images),
-        ]):
-            if _i in _groups:
-                sep = QFrame()
-                sep.setFixedSize(1, 16)
-                sep.setObjectName("FmtSep")
-                fb.addWidget(sep)
-            b = QToolButton()
-            b.setText(text)
-            b.setToolTip(tip)
-            b.clicked.connect(cb)
-            fb.addWidget(b)
-        fb.addStretch(1)
-        self.mode_btn = QToolButton()
-        self.mode_btn.setPopupMode(QToolButton.InstantPopup)
-        mmenu = QMenu(self)
-        for m, label in (("edit", "只显示编辑"), ("split", "分屏"), ("preview", "只显示预览")):
-            a = mmenu.addAction(label)
-            a.setData(m)
-        mmenu.triggered.connect(lambda a: self.set_mode(a.data()))
-        self.mode_btn.setMenu(mmenu)
-        fb.addWidget(self.mode_btn)
-        pl.addWidget(self.format_bar)
+            ("link", "链接 Ctrl+K", self._insert_link),
+            ("gallery", "插入图片", self._pick_images),
+        )
+        self._toolbar_icons = {}
+        for i, (label, tooltip, action) in enumerate(actions):
+            if i in (3, 5, 8):
+                divider = QFrame(objectName="FmtSep")
+                divider.setFixedSize(1, 16)
+                tools.addWidget(divider)
+            button = QToolButton(objectName="FormatControl")
+            button.setFixedSize(28 if label != "</>" else 34, 28)
+            if label in ("select", "link", "gallery"):
+                self._toolbar_icons[label] = button
+                button.setIcon(glyph(label))
+            else:
+                button.setText(label)
+            button.setToolTip(tooltip)
+            button.setAccessibleName(tooltip)
+            button.clicked.connect(action)
+            tools.addWidget(button)
+        toolbar.addWidget(self.format_tools)
+        toolbar.addStretch(1)
 
-        # 编辑器内查找条（Ctrl+F 在正文里时出现）
-        self.find_bar = QFrame(objectName="FindBar")
-        self.find_bar.setVisible(False)
-        fl = QHBoxLayout(self.find_bar)
-        fl.setContentsMargins(10, 4, 10, 4)
-        fl.setSpacing(6)
-        self.find_edit = QLineEdit()
-        self.find_edit.setPlaceholderText("在笔记中查找…")
-        self.find_edit.setFixedWidth(220)
-        self.find_edit.textChanged.connect(lambda _t: self._find_step(forward=True, restart=True))
-        self.find_edit.returnPressed.connect(lambda: self._find_step(forward=True))
-        fl.addWidget(self.find_edit)
-        self.find_count = QLabel("")
-        self.find_count.setObjectName("FindCount")
-        fl.addWidget(self.find_count)
-        for text, tip, fwd in (("↑", "上一个 Shift+Enter", False), ("↓", "下一个 Enter", True)):
-            b = QToolButton()
-            b.setText(text)
-            b.setToolTip(tip)
-            b.clicked.connect(lambda _c=False, f=fwd: self._find_step(forward=f))
-            fl.addWidget(b)
-        fl.addStretch(1)
-        b_close = QToolButton()
-        b_close.setText("✕")
-        b_close.setToolTip("关闭 Esc")
-        b_close.clicked.connect(self.hide_find)
-        fl.addWidget(b_close)
-        pl.addWidget(self.find_bar)
+        segments = QFrame(objectName="ModeSwitch")
+        buttons = QHBoxLayout(segments)
+        buttons.setContentsMargins(3, 3, 3, 3)
+        buttons.setSpacing(2)
+        self.mode_buttons = {}
+        for mode, label in (("edit", "编辑"), ("split", "分屏"), ("preview", "阅读")):
+            button = QToolButton(objectName="ModeOption")
+            button.setText(label)
+            button.setCheckable(True)
+            button.setAutoExclusive(True)
+            button.clicked.connect(lambda _=False, m=mode: self.set_mode(m, focus=True))
+            self.mode_buttons[mode] = button
+            buttons.addWidget(button)
+        toolbar.addWidget(segments)
+        layout.addWidget(self.format_bar)
 
+        self._build_find_bar()
+        layout.addWidget(self.find_bar)
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setChildrenCollapsible(False)
-        self.edit = MarkdownEdit("开始写点什么……\n\n支持简单 Markdown：**粗体**、*斜体*、# 标题、- 列表、> 引用、`代码`")
+
+        self.edit = MarkdownEdit("开始写点什么……")
         self.edit.textChanged.connect(self._on_text_changed)
         self.edit.imageDropped.connect(self._insert_image_file)
+        self.edit_panel = self._text_panel(self.edit, "Markdown", "SourceSheet")
         self.preview = QTextBrowser(objectName="Preview")
         self.preview.setOpenExternalLinks(True)
         self.preview.setOpenLinks(False)
         self.preview.anchorClicked.connect(self._on_anchor)
         self.preview.setFrameShape(QFrame.NoFrame)
-        self.splitter.addWidget(self.edit)
-        self.splitter.addWidget(self.preview)
-        pl.addWidget(self.splitter, 1)
+        self.preview_panel = self._text_panel(self.preview, "预览", "PreviewSheet")
+        self.splitter.addWidget(self.edit_panel)
+        self.splitter.addWidget(self.preview_panel)
+        layout.addWidget(self.splitter, 1)
         self.stack.addWidget(self.page_text)
         self.set_mode("split")
         self._setup_shortcuts()
+
+    @staticmethod
+    def _text_panel(widget, label, name):
+        panel = QFrame(objectName=name)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        caption = QLabel(label, objectName="SheetCaption")
+        layout.addWidget(caption)
+        layout.addWidget(widget, 1)
+        return panel
+
+    def _build_find_bar(self):
+        self.find_bar = QFrame(objectName="FindBar")
+        self.find_bar.hide()
+        find = QHBoxLayout(self.find_bar)
+        find.setContentsMargins(16, 5, 15, 5)
+        find.setSpacing(6)
+        find.addStretch(1)
+        self.find_edit = QLineEdit()
+        self.find_edit.setPlaceholderText("在笔记中查找…")
+        self.find_edit.setFixedWidth(220)
+        self.find_edit.textChanged.connect(lambda _t: self._find_step(forward=True, restart=True))
+        self.find_edit.returnPressed.connect(lambda: self._find_step(forward=True))
+        find.addWidget(self.find_edit)
+        self.find_count = QLabel(objectName="FindCount")
+        find.addWidget(self.find_count)
+        for text, tip, forward in (("↑", "上一个 Shift+Enter", False), ("↓", "下一个 Enter", True)):
+            button = QToolButton()
+            button.setText(text)
+            button.setToolTip(tip)
+            button.clicked.connect(lambda _=False, f=forward: self._find_step(forward=f))
+            find.addWidget(button)
+        close = QToolButton()
+        close.setText("✕")
+        close.setToolTip("关闭 Esc")
+        close.clicked.connect(self.hide_find)
+        find.addWidget(close)
 
     def _setup_shortcuts(self):
         def add(seq, fn, ctx=Qt.WidgetShortcut):
@@ -526,7 +555,7 @@ class NoteEditor(QWidget):
             sc.activated.connect(fn)
             return sc
 
-        add(QKeySequence.Find, self.show_find)
+        self.find_shortcut = add(QKeySequence.Find, self.show_find)
         add("Ctrl+B", lambda: self._wrap("**", "**"))
         add("Ctrl+I", lambda: self._wrap("*", "*"))
         add("Ctrl+K", self._insert_link)
@@ -542,7 +571,8 @@ class NoteEditor(QWidget):
 
     def show_find(self):
         self.find_bar.setVisible(True)
-        text = self.edit.textCursor().selectedText()
+        field = self.preview if self._mode == "preview" else self.edit
+        text = field.textCursor().selectedText()
         if text and "\n" not in text:
             self.find_edit.setText(text)
         self.find_edit.setFocus()
@@ -551,14 +581,15 @@ class NoteEditor(QWidget):
 
     def hide_find(self):
         self.find_bar.setVisible(False)
-        self.edit.setFocus()
+        (self.preview if self._mode == "preview" else self.edit).setFocus()
 
     def _find_step(self, forward: bool = True, restart: bool = False):
         needle = self.find_edit.text()
         if not needle:
             self.find_count.setText("")
             return
-        total = self.edit.toPlainText().count(needle)
+        field = self.preview if self._mode == "preview" else self.edit
+        total = field.toPlainText().count(needle)
         self.find_count.setText(f"{total} 处" if total else "无匹配")
         if not total:
             return
@@ -566,31 +597,44 @@ class NoteEditor(QWidget):
         if not forward:
             flags |= QTextDocument.FindBackward
         if restart:
-            cur = self.edit.textCursor()
+            cur = field.textCursor()
             cur.movePosition(QTextCursor.Start if forward else QTextCursor.End)
-            self.edit.setTextCursor(cur)
-        if not self.edit.find(needle, flags):
-            cur = self.edit.textCursor()
+            field.setTextCursor(cur)
+        if not field.find(needle, flags):
+            cur = field.textCursor()
             cur.movePosition(QTextCursor.Start if forward else QTextCursor.End)
-            self.edit.setTextCursor(cur)
-            self.edit.find(needle, flags)
+            field.setTextCursor(cur)
+            field.find(needle, flags)
+
+    @staticmethod
+    def _field_card(title: str):
+        card = QFrame(objectName="FieldCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 14, 18, 16)
+        layout.setSpacing(10)
+        layout.addWidget(QLabel(title, objectName="FieldHeading"))
+        return card, layout
 
     def _build_gallery_page(self):
         self.page_gallery = QWidget()
-        gl = QVBoxLayout(self.page_gallery)
-        gl.setContentsMargins(22, 6, 22, 14)
-        gl.setSpacing(8)
+        layout = QHBoxLayout(self.page_gallery)
+        layout.setContentsMargins(20, 15, 20, 14)
+        layout.setSpacing(14)
 
+        gallery = QWidget()
+        page = QVBoxLayout(gallery)
+        page.setContentsMargins(0, 0, 0, 0)
+        page.setSpacing(9)
         bar = QHBoxLayout()
-        self.gallery_hint = QLabel("")
-        self.gallery_hint.setObjectName("GalleryHint")
+        bar.addWidget(QLabel("图片", objectName="FieldHeading"))
+        self.gallery_hint = QLabel(objectName="GalleryHint")
         bar.addWidget(self.gallery_hint)
         bar.addStretch(1)
-        b = QPushButton("＋ 添加图片")
-        b.setFixedHeight(30)
-        b.clicked.connect(self._pick_images)
-        bar.addWidget(b)
-        gl.addLayout(bar)
+        self.add_images_button = QPushButton("添加图片", objectName="MiniPrimary")
+        self.add_images_button.setIcon(glyph("add", "on_accent"))
+        self.add_images_button.clicked.connect(self._pick_images)
+        bar.addWidget(self.add_images_button)
+        page.addLayout(bar)
 
         self.wall = ImageWall()
         self.wall.filesDropped.connect(self._add_images_from_files)
@@ -598,217 +642,194 @@ class NoteEditor(QWidget):
         self.wall.deleteRequested.connect(self._remove_selected_images)
         self.wall.orderChanged.connect(self._on_wall_reordered)
         self.wall.setViewMode(QListWidget.IconMode)
-        self.wall.setIconSize(QSize(190, 190))
-        self.wall.setGridSize(QSize(198, 202))
+        self.wall.setIconSize(QSize(155, 155))
+        self.wall.setGridSize(QSize(168, 168))
         self.wall.setResizeMode(QListWidget.Adjust)
         self.wall.setMovement(QListWidget.Static)
-        self.wall.setSpacing(6)
         self.wall.setWordWrap(True)
         self.wall.setObjectName("Wall")
         self.wall.setVerticalScrollBar(AutoFadeScrollBar(Qt.Vertical, self.wall))
         self.wall.itemDoubleClicked.connect(self._open_viewer)
         self.wall.setContextMenuPolicy(Qt.CustomContextMenu)
         self.wall.customContextMenuRequested.connect(self._wall_menu)
-        gl.addWidget(self.wall, 1)
+        page.addWidget(self.wall, 1)
+        layout.addWidget(gallery, 2)
 
+        card, fields = self._field_card("图片说明")
         self.gallery_desc = MarkdownEdit("给这组图片写点说明……")
-        self.gallery_desc.setFixedHeight(96)
-        self.gallery_desc.setObjectName("NoteDesc")
+        self.gallery_desc.setObjectName("FieldDescription")
         self.gallery_desc.textChanged.connect(self._on_desc_changed)
-        gl.addWidget(self.gallery_desc)
+        fields.addWidget(self.gallery_desc, 1)
+        layout.addWidget(card, 1)
         self.stack.addWidget(self.page_gallery)
 
     def _build_account_page(self):
         self.page_account = QWidget()
-        al = QVBoxLayout(self.page_account)
-        al.setContentsMargins(22, 8, 26, 16)
-        al.setSpacing(10)
+        columns = QHBoxLayout(self.page_account)
+        columns.setContentsMargins(20, 15, 20, 14)
+        columns.setSpacing(14)
+        login_card, login = self._field_card("登录凭据")
 
-        card = QFrame(objectName="Card")
-        cl = QVBoxLayout(card)
-        cl.setContentsMargins(20, 16, 16, 16)
-        cl.setSpacing(12)
-
-        for label_text, attr, secret in (("账号", "account_edit", False), ("密码", "password_edit", True)):
+        for label, attr, secret in (("账号", "account_edit", False), ("密码", "password_edit", True)):
+            login.addWidget(QLabel(label, objectName="FieldLabel"))
             row = QHBoxLayout()
-            lb = QLabel(label_text)
-            lb.setFixedWidth(36)
-            row.addWidget(lb)
-            le = QLineEdit()
-            le.setPlaceholderText("（未填写）")
+            row.setSpacing(5)
+            line = QLineEdit()
+            line.setPlaceholderText("未填写")
+            line.textChanged.connect(self._on_field_changed)
+            setattr(self, attr, line)
+            row.addWidget(line, 1)
             if secret:
-                le.setEchoMode(QLineEdit.Password)
-            le.textChanged.connect(self._on_field_changed)
-            setattr(self, attr, le)
-            row.addWidget(le, 1)
-            if secret:
-                eye = QToolButton()
-                eye.setText("显示")
-                eye.setCheckable(True)
-                eye.setToolTip("显示 / 隐藏密码")
-                eye.toggled.connect(
-                    lambda on, b=eye: (
-                        le.setEchoMode(QLineEdit.Normal if on else QLineEdit.Password),
-                        b.setText("隐藏" if on else "显示"),
-                    )
-                )
-                row.addWidget(eye)
-            cp = QToolButton()
-            cp.setText("复制")
-            cp.clicked.connect(lambda _=False, w=le: self._copy(w.text()))
-            row.addWidget(cp)
-            cl.addLayout(row)
-
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setObjectName("FmtSep")
-        cl.addWidget(sep)
-
-        rrow = QHBoxLayout()
-        rl = QLabel("备注")
-        rl.setFixedWidth(36)
-        rrow.addWidget(rl)
-        self.remark_edit = QLineEdit()
-        self.remark_edit.setPlaceholderText("比如：这个账号用来登录什么")
-        self.remark_edit.textChanged.connect(self._on_field_changed)
-        rrow.addWidget(self.remark_edit, 1)
-        cl.addLayout(rrow)
-        al.addWidget(card)
-
-        self.account_tip = QLabel("密码未加密保存在本机的 library.json 里，导出时也会写进 accounts.csv。")
+                line.setEchoMode(QLineEdit.Password)
+                self.password_toggle = QToolButton()
+                self.password_toggle.setText("显示")
+                self.password_toggle.setCheckable(True)
+                self.password_toggle.setToolTip("显示或隐藏密码")
+                self.password_toggle.toggled.connect(self._toggle_password)
+                row.addWidget(self.password_toggle)
+            copy = QToolButton()
+            copy.setText("复制")
+            copy.setAccessibleName(f"复制{label}")
+            copy.clicked.connect(lambda _=False, field=line: self._copy(field.text()))
+            row.addWidget(copy)
+            login.addLayout(row)
+        self.account_tip = QLabel(
+            "密码以明文保存在本机 library.json 中，导出时也会写入 accounts.csv。",
+            objectName="AccountTip",
+        )
         self.account_tip.setWordWrap(True)
-        self.account_tip.setObjectName("AccountTip")
-        al.addWidget(self.account_tip)
-        al.addStretch(1)
+        login.addWidget(self.account_tip)
+        columns.addWidget(login_card, 3, Qt.AlignTop)
+
+        remark_card, remark = self._field_card("账号备注")
+        self.remark_edit = QLineEdit()
+        self.remark_edit.setPlaceholderText("例如账号的用途")
+        self.remark_edit.textChanged.connect(self._on_field_changed)
+        remark.addWidget(self.remark_edit)
+        columns.addWidget(remark_card, 2, Qt.AlignTop)
         self.stack.addWidget(self.page_account)
+
+    def _toggle_password(self, showing: bool):
+        self.password_edit.setEchoMode(QLineEdit.Normal if showing else QLineEdit.Password)
+        self.password_toggle.setText("隐藏" if showing else "显示")
 
     def _build_link_page(self):
         self.page_link = QWidget()
-        ll = QVBoxLayout(self.page_link)
-        ll.setContentsMargins(22, 8, 26, 16)
-        ll.setSpacing(10)
-
-        card = QFrame(objectName="Card")
-        cl = QHBoxLayout(card)
-        cl.setContentsMargins(18, 12, 14, 12)
+        layout = QVBoxLayout(self.page_link)
+        layout.setContentsMargins(20, 15, 20, 14)
+        layout.setSpacing(14)
+        address_card, address = self._field_card("链接地址")
+        row = QHBoxLayout()
+        row.setSpacing(8)
         self.url_edit = QLineEdit()
         self.url_edit.setPlaceholderText("https://")
         self.url_edit.textChanged.connect(self._on_field_changed)
-        cl.addWidget(self.url_edit, 1)
-        b = QPushButton("打开")
-        b.setFixedWidth(64)
-        b.clicked.connect(self._open_url)
-        cl.addWidget(b)
-        ll.addWidget(card)
+        row.addWidget(self.url_edit, 1)
+        open_link = QPushButton("打开链接", objectName="MiniPrimary")
+        open_link.clicked.connect(self._open_url)
+        row.addWidget(open_link)
+        address.addLayout(row)
+        layout.addWidget(address_card)
 
+        description_card, description = self._field_card("链接说明")
         self.link_desc = MarkdownEdit("写下这条链接的说明……")
-        self.link_desc.setObjectName("NoteDesc")
+        self.link_desc.setObjectName("FieldDescription")
         self.link_desc.textChanged.connect(self._on_desc_changed)
-        ll.addWidget(self.link_desc, 1)
+        description.addWidget(self.link_desc, 1)
+        layout.addWidget(description_card, 1)
         self.stack.addWidget(self.page_link)
 
     def _build_date_page(self):
         self.page_date = QWidget()
-        dl = QVBoxLayout(self.page_date)
-        dl.setContentsMargins(22, 8, 26, 16)
-        dl.setSpacing(10)
+        columns = QHBoxLayout(self.page_date)
+        columns.setContentsMargins(20, 15, 20, 14)
+        columns.setSpacing(14)
+        display = QFrame(objectName="DateHero")
+        summary = QVBoxLayout(display)
+        summary.setContentsMargins(22, 22, 22, 24)
+        summary.setSpacing(12)
+        self.date_icon = QLabel(objectName="DateHeroIcon")
+        self.date_icon.setPixmap(glyph("date", "accent_text").pixmap(27))
+        summary.addWidget(self.date_icon)
+        self.date_big = QLabel(objectName="DateBig")
+        self.date_big.setWordWrap(True)
+        summary.addWidget(self.date_big)
+        self.date_sub = QLabel(objectName="DateSub")
+        self.date_sub.setWordWrap(True)
+        summary.addWidget(self.date_sub)
+        columns.addWidget(display, 2, Qt.AlignTop)
 
-        card = QFrame(objectName="Card")
-        cl = QVBoxLayout(card)
-        cl.setContentsMargins(24, 20, 24, 20)
-        cl.setSpacing(6)
-        self.date_big = QLabel("")
-        self.date_big.setObjectName("DateBig")
-        cl.addWidget(self.date_big)
-        self.date_sub = QLabel("")
-        self.date_sub.setObjectName("DateSub")
-        cl.addWidget(self.date_sub)
-        cl.addSpacing(8)
-
-        row = QHBoxLayout()
-        row.setSpacing(7)
+        right = QWidget()
+        sections = QVBoxLayout(right)
+        sections.setContentsMargins(0, 0, 0, 0)
+        sections.setSpacing(12)
+        date_card, form = self._field_card("日期设置")
+        recurrence = QHBoxLayout()
         self.date_type = QComboBox()
         self.date_type.addItems(["固定日期", "每年重复"])
-        self.date_type.setMinimumWidth(112)
         self.date_type.currentIndexChanged.connect(self._on_date_changed)
-        row.addWidget(self.date_type)
-        self.date_year = QSpinBox()
-        self.date_year.setRange(1900, 2200)
-        self.date_year.setButtonSymbols(QSpinBox.NoButtons)
-        self.date_year.setAlignment(Qt.AlignCenter)
-        self.date_year.setFixedWidth(76)
-        self.date_year.valueChanged.connect(self._on_date_changed)
-        row.addWidget(self.date_year)
-        self.year_label = QLabel("年")
-        row.addWidget(self.year_label)
-        self.date_month = QSpinBox()
-        self.date_month.setRange(1, 12)
-        self.date_month.setButtonSymbols(QSpinBox.NoButtons)
-        self.date_month.setAlignment(Qt.AlignCenter)
-        self.date_month.setFixedWidth(52)
-        self.date_month.valueChanged.connect(self._on_date_changed)
-        row.addWidget(self.date_month)
-        row.addWidget(QLabel("月"))
-        self.date_day = QSpinBox()
-        self.date_day.setRange(1, 31)
-        self.date_day.setButtonSymbols(QSpinBox.NoButtons)
-        self.date_day.setAlignment(Qt.AlignCenter)
-        self.date_day.setFixedWidth(52)
-        self.date_day.valueChanged.connect(self._on_date_changed)
-        row.addWidget(self.date_day)
-        row.addWidget(QLabel("日"))
+        recurrence.addWidget(self.date_type, 1)
         self.date_lunar = QCheckBox("农历")
         self.date_lunar.toggled.connect(self._on_date_changed)
-        row.addWidget(self.date_lunar)
-        row.addStretch(1)
-        cl.addLayout(row)
-        dl.addWidget(card)
+        recurrence.addWidget(self.date_lunar)
+        form.addLayout(recurrence)
 
-        self.date_desc = MarkdownEdit("这个日子对你意味着什么……")
-        self.date_desc.setObjectName("NoteDesc")
+        parts = QHBoxLayout()
+        parts.setSpacing(7)
+        for attr, label, minimum, maximum in (
+            ("date_year", "年", 1900, 2200), ("date_month", "月", 1, 12), ("date_day", "日", 1, 31),
+        ):
+            field = QSpinBox()
+            field.setRange(minimum, maximum)
+            field.setButtonSymbols(QSpinBox.NoButtons)
+            field.setAlignment(Qt.AlignCenter)
+            field.setAccessibleName(label)
+            field.setMinimumWidth(45)
+            field.valueChanged.connect(self._on_date_changed)
+            setattr(self, attr, field)
+            parts.addWidget(field, 1)
+            caption = QLabel(label, objectName="FieldLabel")
+            if attr == "date_year":
+                self.year_label = caption
+            parts.addWidget(caption)
+        form.addLayout(parts)
+        sections.addWidget(date_card)
+
+        description_card, description = self._field_card("这个日子的说明")
+        self.date_desc = MarkdownEdit("写下这个日子对你的意义……")
+        self.date_desc.setObjectName("FieldDescription")
         self.date_desc.textChanged.connect(self._on_desc_changed)
-        dl.addWidget(self.date_desc, 1)
+        description.addWidget(self.date_desc, 1)
+        sections.addWidget(description_card, 1)
+        columns.addWidget(right, 3)
         self.stack.addWidget(self.page_date)
 
     # ================= 数据 =================
     def set_library(self, lib: Library):
         self.lib = lib
 
-    def _fade_in(self, widget):
-        """切换类型页时轻轻淡入一下，别做成花哨的转场。"""
-        try:
-            eff = QGraphicsOpacityEffect(widget)
-            widget.setGraphicsEffect(eff)
-            anim = QPropertyAnimation(eff, b"opacity", self)
-            anim.setDuration(170)
-            anim.setStartValue(0.25)
-            anim.setEndValue(1.0)
-            anim.setEasingCurve(QEasingCurve.OutCubic)
-            anim.finished.connect(lambda: widget.setGraphicsEffect(None))
-            anim.start(QAbstractAnimation.DeleteWhenStopped)
-        except RuntimeError:
-            pass
-
     def set_note(self, note: Note | None, focus: bool = True):
         self.note = note
         self._loading = True
         if note is None:
             self.stack.setCurrentWidget(self.page_empty)
-            self.title_wrap.setVisible(False)
-            self.top_bar.setVisible(False)
+            self.top_bar.hide()
+            self.status_bar.hide()
             self.word_label.setText("")
             self.time_label.setText("")
             self._loading = False
             return
 
-        self.top_bar.setVisible(True)
-        self._sync_remind()
-
+        self.top_bar.show()
+        self.status_bar.show()
+        self.password_toggle.setChecked(False)
         self.badge.setText(TYPE_LABELS.get(note.type, "笔记"))
         self.title_edit.blockSignals(True)
         self.title_edit.setText(note.title or "")
         self.title_edit.blockSignals(False)
-        self.title_wrap.setVisible(note.type in ("article", "account", "link", "date"))
+        titled = note.type in ("article", "account", "link", "date")
+        self.title_wrap.setVisible(titled)
+        self.generated_title.setVisible(not titled)
 
         content = self.lib.content(note.id)
         page = {
@@ -819,10 +840,7 @@ class NoteEditor(QWidget):
             "link": self.page_link,
             "date": self.page_date,
         }.get(note.type, self.page_text)
-        changed = self.stack.currentWidget() is not page
         self.stack.setCurrentWidget(page)
-        if changed:
-            self._fade_in(page)
 
         if note.type in ("note", "article"):
             self.edit.blockSignals(True)
@@ -868,16 +886,43 @@ class NoteEditor(QWidget):
                 w.setText(v or "")
                 w.blockSignals(False)
 
-        self.btn_pin.blockSignals(True)
-        self.btn_pin.setChecked(bool(note.pinned_at))
-        self.btn_pin.blockSignals(False)
         self._apply_readonly(note.state == "trash")
         self._dirty = False
-        self._update_meta_labels()
+        self.refresh_note_meta()
         self._loading = False
         if focus:
-            w = self.title_edit if self.title_wrap.isVisible() else self._content_widget()
-            w.setFocus()
+            self.focus_document()
+
+    def focus_document(self):
+        if not self.note:
+            return
+        if self.note.type in ("note", "article") and self._mode == "preview":
+            widget = self.preview
+        elif self.title_wrap.isVisible() and not self.title_edit.text() and self.note.state != "trash":
+            widget = self.title_edit
+        else:
+            widget = self._content_widget()
+        widget.setFocus()
+
+    def _sync_editor_icons(self):
+        self.btn_pin.setIcon(glyph("pin"))
+        self.add_images_button.setIcon(glyph("add", "on_accent"))
+        self.date_icon.setPixmap(glyph("date", "accent_text").pixmap(27))
+        for key, button in self._toolbar_icons.items():
+            button.setIcon(glyph(key))
+        for action in self.btn_color.menu().actions():
+            action.setIcon(color_icon(action.data()))
+
+    def refresh_note_meta(self):
+        if not self.note:
+            return
+        self.type_icon.setPixmap(glyph(self.note.type, "accent_text").pixmap(15))
+        self.btn_color.setIcon(color_icon(self.note.color))
+        self.btn_pin.setChecked(bool(self.note.pinned_at))
+        self._sync_remind()
+        if self._readonly != (self.note.state == "trash"):
+            self._apply_readonly(self.note.state == "trash")
+        self._update_meta_labels()
 
     def _content_widget(self) -> QWidget:
         if not self.note:
@@ -896,6 +941,10 @@ class NoteEditor(QWidget):
             return
         n = self.note
         text = self.current_content()
+        if n.type in ("note", "gallery"):
+            title = n.display_title(text)
+            self.generated_title.setText(title)
+            self.generated_title.setToolTip(title)
         chars = len(text.strip())
         if n.type == "gallery":
             self.word_label.setText(f"{len(n.images)} 张图片 · 说明 {chars} 字")
@@ -909,7 +958,7 @@ class NoteEditor(QWidget):
 
     # ================= 编辑事件 =================
     def _emit(self):
-        if self._loading or not self.note:
+        if self._loading or not self.note or self.note.state == "trash":
             return
         self._dirty = True
         self.save_state.setText("编辑中…")
@@ -917,6 +966,8 @@ class NoteEditor(QWidget):
 
     def _on_text_changed(self):
         self._emit()
+        if self.note and self.note.type == "note":
+            self._update_meta_labels()
         self._preview_timer.start()
 
     def _on_desc_changed(self):
@@ -1044,7 +1095,7 @@ class NoteEditor(QWidget):
         for rel in self.note.images:
             p = self.lib.attachment_abspath(rel)
             item = QListWidgetItem()
-            if p.exists():
+            if p and p.exists():
                 pm = QPixmap(str(p))
                 if not pm.isNull():
                     item.setIcon(_thumb(pm, 200))
@@ -1054,14 +1105,13 @@ class NoteEditor(QWidget):
             item.setToolTip(Path(rel).name)
             self.wall.addItem(item)
         n = len(self.note.images)
-        self.gallery_hint.setText(
-            f"{n} 张图片 · 双击看大图，拖入或粘贴可添加" if n else "还没有图片，点右上角添加，也可以把图片拖进来"
-        )
+        self.gallery_hint.setText(f"{n} 张" if n else "可拖入或粘贴")
+        self.wall.setAccessibleName("图片列表，双击查看大图")
 
     def _open_viewer(self, item: QListWidgetItem):
         paths = [self.wall.item(i).data(Qt.UserRole) for i in range(self.wall.count())]
         paths = [p for p in paths if p and Path(p).exists()]
-        if not paths:
+        if item.data(Qt.UserRole) not in paths:
             return
         idx = max(0, paths.index(item.data(Qt.UserRole)))
         ImageViewer(paths, idx, self).exec_()
@@ -1265,29 +1315,15 @@ class NoteEditor(QWidget):
         self.lib.toggle_color(self.note.id, color)
         self.metaChanged.emit()
 
-    def _toggle_archive(self):
-        if not self.note:
-            return
-        self.lib.archive_note(self.note.id, self.note.state != "archived")
-        self.note.state = self.lib.notes[self.note.id].state
-        self.metaChanged.emit()
-
-    def _delete(self):
-        if not self.note:
-            return
-        self.lib.delete_note(self.note.id)
-        self.note = None
-        self.stack.setCurrentWidget(self.page_empty)
-        self.title_wrap.setVisible(False)
-        self.metaChanged.emit()
-
     def _sync_remind(self):
         n = self.note
         if n and n.remind_at:
             self.btn_remind.setText("⏰")
+            self.btn_remind.setIcon(glyph("clock", "accent_text"))
             self.btn_remind.setToolTip("提醒：" + human_time(n.remind_at) + "（点击修改）")
         else:
             self.btn_remind.setText("提醒")
+            self.btn_remind.setIcon(glyph("clock"))
             self.btn_remind.setToolTip("设置提醒")
 
     def _on_remind(self):
@@ -1307,15 +1343,6 @@ class NoteEditor(QWidget):
         self._sync_remind()
         self.metaChanged.emit()
 
-    def _duplicate(self):
-        if not self.note:
-            return
-        n = self.lib.add_note(self.note.topic_id, self.note.type, self.current_content(), self.note.title)
-        n.url, n.account, n.password, n.remark = self.note.url, self.note.account, self.note.password, self.note.remark
-        n.date, n.images, n.description = self.note.date, list(self.note.images), self.note.description
-        self.lib.save()
-        self.metaChanged.emit()
-
     # ================= 预览 =================
     def _on_anchor(self, url: QUrl):
         """预览里的链接：待办方框就地勾选，其余链接交给系统浏览器。"""
@@ -1330,6 +1357,8 @@ class NoteEditor(QWidget):
 
     def _toggle_todo(self, lineno: int):
         """把正文第 lineno 行的 [ ] / [x] 翻过来（保留撤销栈）。"""
+        if self.note and self.note.state == "trash":
+            return
         text = self.edit.toPlainText()
         lines = text.split("\n")
         if not (0 <= lineno < len(lines)):
@@ -1387,27 +1416,25 @@ class NoteEditor(QWidget):
         else:
             self._paint_highlight()
 
-    def set_mode(self, mode: str):
+    def set_mode(self, mode: str, *, focus: bool = False):
+        previous = self._mode
+        self.mode_buttons[mode].setChecked(True)
         self._mode = mode
-        if not hasattr(self, "edit"):
-            return
-        if mode == "edit":
-            self.edit.show()
-            self.preview.hide()
-            self.mode_btn.setText("编辑")
-        elif mode == "preview":
-            self.edit.hide()
-            self.preview.show()
-            self.mode_btn.setText("预览")
+        self.edit_panel.setVisible(mode != "preview")
+        self.preview_panel.setVisible(mode != "edit")
+        self.format_tools.setVisible(mode != "preview")
+        if mode == "preview":
+            self.find_bar.hide()
             self._refresh_preview()
-        else:
-            self.edit.show()
-            self.preview.show()
-            self.mode_btn.setText("分屏")
-            self.splitter.setSizes([10, 10])
+        elif mode == "split" and previous != mode:
+            self.splitter.setSizes([1, 1])
+        if focus:
+            self.focus_document()
 
     def refresh_theme(self):
         """切换浅色/深色后刷新依赖配色表 C 的部件与预览。"""
+        self._sync_editor_icons()
+        self.refresh_note_meta()
         try:
             self._refresh_preview()
         except Exception:
@@ -1420,8 +1447,11 @@ class NoteEditor(QWidget):
         """回收站里的笔记只读——想改先恢复出来。"""
         self._readonly = ro
         for w in self.findChildren(QWidget):
-            if isinstance(w, (QLineEdit, QPlainTextEdit)):
+            if isinstance(w, (QLineEdit, QPlainTextEdit)) and w is not self.find_edit:
                 w.setReadOnly(ro)
+        self.format_tools.setEnabled(not ro)
+        self.add_images_button.setEnabled(not ro)
+        self.wall.setAcceptDrops(not ro)
         self.save_state.setText("回收站 · 只读" if ro else "")
 
     def mark_saved(self):

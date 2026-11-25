@@ -4,12 +4,14 @@ import shutil
 import sys
 from pathlib import Path
 
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication
 
 from timodesk.settings import Settings
 from timodesk.store import Library
 from timodesk.ui.dialogs import SettingsDialog
 from timodesk.ui.main_window import MainWindow
+from timodesk.ui.theme import C, available_text_fonts
 
 ROOT = Path("worklib_set")
 shutil.rmtree(ROOT, ignore_errors=True)
@@ -57,6 +59,20 @@ check("没改主题不算变更", dlg2.theme_changed is False)
 w = MainWindow(lib)
 w.settings.set("sort_mode", "updated")
 check("主窗口能打开设置", hasattr(w, "open_settings"))
+
+font_before = w.settings.get("font_family", "Microsoft YaHei")
+other_fonts = [family for _, family in available_text_fonts() if family != font_before]
+if other_fonts:
+    font = other_fonts[0]
+
+    def select_font():
+        dialog = app.activeModalWidget()
+        dialog.cmb_font.setCurrentIndex(dialog.cmb_font.findData(font))
+        dialog.accept()
+
+    QTimer.singleShot(0, select_font)
+    w.open_settings()
+    check("切换正文字体立即生效", C["font_text"] == font and w.settings.get("font_family") == font)
 
 print(f"\ntotal: {ok} / {ok + fail}")
 sys.exit(0 if fail == 0 else 1)

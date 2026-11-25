@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtCore import QMimeData, QPoint, QRect, QRectF, QSize, Qt, pyqtSignal
+from PyQt5.QtCore import QEasingCurve, QMimeData, QPoint, QRect, QRectF, QSize, Qt, QVariantAnimation, pyqtSignal
 from PyQt5.QtGui import (
     QColor,
     QDrag,
@@ -16,9 +16,11 @@ from PyQt5.QtGui import (
     QPen,
     QPixmap,
 )
-from PyQt5.QtWidgets import QListWidget, QScrollBar, QStyledItemDelegate, QStyle
+from PyQt5.QtWidgets import QListView, QListWidget, QListWidgetItem, QScrollBar, QStyledItemDelegate, QStyle
 
+from ..store import TYPE_LABELS
 from .theme import C
+from .visuals import glyph, motion_enabled
 
 
 def human_time(iso: str | None) -> str:
@@ -78,10 +80,11 @@ class NoteCardDelegate(QStyledItemDelegate):
         self.lib = lib
         self.show_topic = False
         self.term = ""  # 搜索词：命中处会在摘要里刷底色
-        self._covers: dict[str, QPixmap] = {}
+        self._covers: dict[str, QPixmap | None] = {}
 
     def sizeHint(self, option, index) -> QSize:
-        return QSize(280, 100)
+        grid = self.parent()
+        return grid.gridSize() if isinstance(grid, NoteList) and grid.gridSize().isValid() else QSize(274, 166)
 
     def _cover(self, note) -> QPixmap | None:
         """图库笔记取第一张图当封面（按笔记 id 缓存，滚动时不重复解码）。"""
@@ -118,112 +121,112 @@ class NoteCardDelegate(QStyledItemDelegate):
 
     def paint(self, painter: QPainter, option, index):
         note = self.lib.notes.get(index.data(Qt.UserRole))
-        if not note:
+        if note is None:
             return
         painter.save()
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.fillRect(option.rect, QColor(C["card"]))
+        painter.setRenderHint(QPainter.Antialiasing)
+        grid = self.parent()
+        if isinstance(grid, NoteList):
+            painter.setOpacity(grid.card_opacity)
 
-        r = option.rect.adjusted(7, 5, -7, -5)
+        card = QRectF(option.rect).adjusted(5, 3, -8, -11)
         selected = bool(option.state & QStyle.State_Selected)
         hovered = bool(option.state & QStyle.State_MouseOver)
-
-        # 投影：一层很淡的晕，让卡片看起来浮在纸面上
         painter.setPen(Qt.NoPen)
-        lift = 2 if (selected or hovered) else 1
-        painter.setBrush(QColor(0, 0, 0, 11 if (selected or hovered) else 7))
-        painter.drawRoundedRect(
-            r.adjusted(-lift, -lift + 1, lift, lift + 2),
-            8 + lift,
-            8 + lift,
-        )
+        painter.setBrush(QColor(0, 0, 0, 10 if hovered else 5))
+        painter.drawRoundedRect(card.translated(0, 2), 11, 11)
+        painter.setBrush(QColor(C["card_hover" if hovered and not selected else "card"]))
+        painter.setPen(QPen(QColor(C["accent" if selected else "card_border"]), 1.2 if selected else 1))
+        painter.drawRoundedRect(card, 11, 11)
 
-        if selected:
-            bg, border = QColor(C["card"]), QColor(C["accent"])
-        elif hovered:
-            bg, border = QColor(C["card_hover"]), QColor(C["card_border"])
-        else:
-            bg, border = QColor(C["card"]), QColor(C["card_border"])
-        painter.setBrush(bg)
-        painter.setPen(QPen(border, 1))
-        painter.drawRoundedRect(r, 8, 8)
-
+        left, top = round(card.left() + 15), round(card.top() + 12)
+        right = round(card.right() - 15)
+        kind = note.type
         if note.color:
-            bar = QRect(r.left(), r.top() + 10, 3, r.height() - 20)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(note.color))
-            painter.drawRoundedRect(bar, 1.5, 1.5)
+            color = QColor(note.color)
+            if color.isValid():
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(color)
+                painter.drawRoundedRect(QRectF(card.left() + 1, top + 31, 3, 34), 1.5, 1.5)
+        marker = QRect(left, top, 26, 26)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(C["checked_bg" if selected else "card_soft"]))
+        painter.drawRoundedRect(QRectF(marker), 6, 6)
+        glyph(kind, "accent_text" if selected else "muted").paint(painter, marker.adjusted(5, 5, -5, -5))
 
-        left = r.left() + (16 if note.color else 13)
-        width = r.width() - (left - r.left()) - 13
-
-        # 图库笔记在右侧放一张封面，扫列表时能一眼认出来
-        cover = self._cover(note)
-        if cover is not None:
-            side = 54
-            crect = QRect(r.right() - 13 - side, r.top() + 11, side, side)
-            painter.save()
-            painter.setClipRect(crect)
-            painter.drawPixmap(crect, cover)
-            painter.restore()
-            width -= side + 10
+        meta = QFont(option.font)
+        meta.setPixelSize(11)
+        painter.setFont(meta)
+        painter.setPen(QColor(C["muted"]))
+        painter.drawText(QRect(left + 33, top, right - left - 80, 26), Qt.AlignVCenter | Qt.AlignLeft,
+                         TYPE_LABELS.get(kind, "笔记"))
+        status_x = right - 16
+        for show, name in ((selected, "select"), (bool(note.pinned_at), "pin"), (bool(note.remind_at), "clock")):
+            if show:
+                glyph(name, "accent_text" if name != "clock" else "muted").paint(painter, QRect(status_x, top + 5, 16, 16))
+                status_x -= 19
 
         content = self.lib.content(note.id)
         title = note.display_title(content)
+        cover = self._cover(note)
+        text_width = right - left
+        if cover is not None:
+            painter.drawPixmap(QRect(right - 59, top + 31, 59, 59), cover)
+            text_width -= 70
 
-        f_title = QFont(option.font)
-        f_title.setPixelSize(15)
-        f_title.setWeight(QFont.DemiBold)
-        painter.setFont(f_title)
-        painter.setPen(QColor(C["accent_text"] if selected else C["ink"]))
-        fm = QFontMetrics(f_title)
-        pin = "  置顶" if note.pinned_at else ""
-        t = fm.elidedText(title + pin, Qt.ElideRight, width)
-        painter.drawText(QRect(left, r.top() + 8, width, 20), Qt.AlignLeft | Qt.AlignVCenter, t)
+        heading = QFont(option.font)
+        heading.setPixelSize(16)
+        heading.setWeight(QFont.DemiBold)
+        painter.setFont(heading)
+        title_font = QFontMetrics(heading)
+        title_color = C["accent_text" if selected else "ink"]
+        painter.setPen(QColor(title_color))
+        shown = title_font.elidedText(title, Qt.ElideRight, text_width)
+        _draw_line(painter, QRect(left, top + 33, text_width, 24), shown, self.term, title_font, title_color)
 
-        body = content if note.type not in ("gallery", "link", "account", "date") else ""
-        if note.type == "link":
-            body = (note.url or "") + ("  " + note.description if note.description else "")
-        elif note.type == "account":
-            body = note.account + (" · " + note.remark if note.remark else "")
-        elif note.type == "date" and note.date:
-            body = _date_text(note.date)
-        elif note.type == "gallery":
-            body = f"{len(note.images)} 张图片" + (("  " + note.description) if note.description else "")
-
-        f_body = QFont(option.font)
-        f_body.setPixelSize(12)
-        painter.setFont(f_body)
+        body = self._summary(note, content, title).strip()
+        summary_font = QFont(option.font)
+        summary_font.setPixelSize(12)
+        painter.setFont(summary_font)
+        summary_metrics = QFontMetrics(summary_font)
         painter.setPen(QColor(C["muted"]))
-        fm2 = QFontMetrics(f_body)
-        if body.strip() == title.strip():
-            body = "\n".join(body.splitlines()[1:])
-        lines = _wrap_lines(body, fm2, width, 2)
-        y = r.top() + 30
-        for ln in lines:
-            _draw_line(painter, QRect(left, y, width, 18), ln, self.term, fm2)
-            y += 17
-        if not lines:
-            painter.setPen(QColor(C["faint"]))
-            painter.drawText(QRect(left, y, width, 18), Qt.AlignLeft | Qt.AlignVCenter, "（空白）")
+        for line, text in enumerate(_wrap_lines(body or "（空白）", summary_metrics, text_width, 2)):
+            _draw_line(painter, QRect(left, top + 60 + 17 * line, text_width, 17),
+                       text, self.term, summary_metrics)
 
-        painter.setPen(QColor(C["faint"]))
-        f_meta = QFont(option.font)
-        f_meta.setPixelSize(11)
-        painter.setFont(f_meta)
-        fm_meta = QFontMetrics(f_meta)
-        meta = f"{_TYPE_MARK.get(note.type, '')} · {human_time(note.updated_at or note.created_at)}"
-        if getattr(note, "remind_at", None):
-            meta = "⏰ " + human_time(note.remind_at) + " · " + meta
+        footer = round(card.bottom()) - 31
+        painter.setPen(QPen(QColor(C["line_soft"]), 1))
+        painter.drawLine(left, footer, right, footer)
+        painter.setFont(meta)
+        painter.setPen(QColor(C["muted"]))
+        when = human_time(note.updated_at or note.created_at)
+        if note.remind_at:
+            when = "提醒 " + human_time(note.remind_at)
+        metrics = QFontMetrics(meta)
+        when_width = metrics.horizontalAdvance(when) + 4
+        painter.drawText(QRect(right - when_width, footer + 4, when_width, 22), Qt.AlignRight | Qt.AlignVCenter, when)
         if self.show_topic:
             topic = self.lib.topics.get(note.topic_id)
             if topic:
-                meta = f"{topic.name} · {meta}"
-        painter.drawText(
-            QRect(left, r.bottom() - 21, width, 16), Qt.AlignLeft | Qt.AlignVCenter,
-            fm_meta.elidedText(meta, Qt.ElideRight, width),
-        )
+                width = right - left - when_width - 7
+                text = metrics.elidedText(topic.name, Qt.ElideRight, width)
+                painter.drawText(QRect(left, footer + 4, width, 22), Qt.AlignLeft | Qt.AlignVCenter, text)
         painter.restore()
+
+    @staticmethod
+    def _summary(note, content: str, title: str) -> str:
+        if note.type == "link":
+            return "  ".join(part for part in (note.url, note.description) if part)
+        if note.type == "account":
+            return " · ".join(part for part in (note.account, note.remark) if part)
+        if note.type == "date" and note.date:
+            return _date_text(note.date)
+        if note.type == "gallery":
+            return f"{len(note.images)} 张图片" + (f" · {note.description}" if note.description else "")
+        lines = content.strip().splitlines()
+        if lines and lines[0].strip().lstrip("# ").strip() == title:
+            lines = lines[1:]
+        return " ".join(line.strip().lstrip("# ").strip() for line in lines)
 
 
 def _spans(line: str, terms: list[str]) -> list[tuple[int, int]]:
@@ -253,13 +256,14 @@ def _spans(line: str, terms: list[str]) -> list[tuple[int, int]]:
     return merged
 
 
-def _draw_line(painter, rect, line, term, fm) -> None:
+def _draw_line(painter, rect, line, term, fm, normal_color=None) -> None:
     """绘制摘要及搜索高亮，支持空格分开的多个词。"""
     terms = [w for w in (term or "").split() if w]
     spans = _spans(line, terms)
     if not spans:
         painter.drawText(rect, Qt.AlignLeft | Qt.AlignVCenter, line)
         return
+    color = QColor(normal_color or C["muted"])
     x = rect.left()
     pos = 0
     for s0, e0 in spans:
@@ -268,7 +272,7 @@ def _draw_line(painter, rect, line, term, fm) -> None:
         if s0 > pos:
             seg = line[pos:s0]
             w = fm.width(seg)
-            painter.setPen(QColor(C["muted"]))
+            painter.setPen(color)
             painter.drawText(QRect(x, rect.top(), w + 2, rect.height()), Qt.AlignLeft | Qt.AlignVCenter, seg)
             x += w
         seg = line[s0:e0]
@@ -282,23 +286,13 @@ def _draw_line(painter, rect, line, term, fm) -> None:
         pos = e0
     if pos < len(line) and x <= rect.right():
         seg = line[pos:]
-        painter.setPen(QColor(C["muted"]))
+        painter.setPen(color)
         painter.drawText(
             QRect(x, rect.top(), rect.width(), rect.height()),
             Qt.AlignLeft | Qt.AlignVCenter,
             fm.elidedText(seg, Qt.ElideRight, max(0, rect.right() - x)),
         )
-    painter.setPen(QColor(C["muted"]))
-
-
-_TYPE_MARK = {
-    "note": "便签",
-    "article": "文章",
-    "gallery": "图库",
-    "link": "链接",
-    "date": "日子",
-    "account": "账号",
-}
+    painter.setPen(color)
 
 
 def _date_text(d: dict) -> str:
@@ -314,7 +308,6 @@ def _date_text(d: dict) -> str:
         return ""
     delta = date_countdown(d)
     return f"{base} · {delta}" if delta else base
-    return f"{d.get('month')}月{d.get('dayOfMonth')}日"
 
 
 class TopicDelegate(QStyledItemDelegate):
@@ -334,55 +327,47 @@ class TopicDelegate(QStyledItemDelegate):
             return
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.fillRect(option.rect, QColor(C["sidebar"]))
-        r = option.rect.adjusted(4, 2, -6, -2)
+        painter.fillRect(option.rect, QColor(C["paper_alt"]))
+        r = option.rect.adjusted(1, 2, -2, -2)
         selected = bool(option.state & QStyle.State_Selected)
         hovered = bool(option.state & QStyle.State_MouseOver)
         if selected:
-            painter.setPen(QPen(QColor(C["card_border_strong"]), 1))
+            painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(C["checked_bg"]))
             painter.drawRoundedRect(r, 8, 8)
         elif hovered:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(C["card_hover"]))
             painter.drawRoundedRect(r, 8, 8)
-        if selected:
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(C["accent"]))
-            painter.drawRoundedRect(QRectF(r.left() + 2, r.center().y() - 8, 2.5, 16), 1.2, 1.2)
-
         cnt = self.counts.get(topic.id, 0)
         archived = getattr(topic, "state", "active") == "archived"
         name_font = QFont(option.font)
-        name_font.setPixelSize(14)
+        name_font.setPixelSize(13)
         name_font.setWeight(QFont.DemiBold if selected else QFont.Normal)
         painter.setFont(name_font)
         name_color = C["faint"] if archived else C["ink"]
         painter.setPen(QColor(C["accent_text"] if selected else name_color))
         fm = QFontMetrics(name_font)
         locked = bool(getattr(topic, "locked", False))
-        name = fm.elidedText(topic.name, Qt.ElideRight, r.width() - 46 - (15 if locked else 0))
+        name = fm.elidedText(topic.name, Qt.ElideRight, r.width() - 67 - (15 if locked else 0))
+        center = r.center().y()
+        glyph("folder", "accent_text" if selected else "muted").paint(
+            painter, QRect(r.left() + 9, center - 8, 16, 16)
+        )
         painter.drawText(
-            QRect(r.left() + 10, r.top(), r.width() - 46, r.height()),
+            QRect(r.left() + 34, r.top(), r.width() - 57, r.height()),
             Qt.AlignLeft | Qt.AlignVCenter | Qt.TextSingleLine,
             name,
         )
         if locked:
-            # 自绘小锁与其他次级图标使用同一文字色。
-            x = r.left() + 10 + fm.width(name) + 5
-            cy = r.center().y()
-            painter.setPen(QPen(QColor(C["faint"]), 1.1))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawArc(QRectF(x + 1.8, cy - 7, 5.4, 8), 0, 180 * 16)
-            painter.setBrush(QColor(C["faint"]))
-            painter.drawRoundedRect(QRectF(x, cy - 0.5, 9, 7), 1.6, 1.6)
+            glyph("lock", "faint").paint(painter, QRect(r.left() + 39 + fm.horizontalAdvance(name), center - 6, 12, 12))
 
         if cnt:
             meta = QFont(option.font)
             meta.setPixelSize(10)
             painter.setFont(meta)
             painter.setPen(QColor(C["accent_text"] if selected else C["faint"]))
-            painter.drawText(QRect(r.right() - 40, r.top(), 34, r.height()), Qt.AlignRight | Qt.AlignVCenter, str(cnt))
+            painter.drawText(QRect(r.right() - 41, r.top(), 30, r.height()), Qt.AlignRight | Qt.AlignVCenter, str(cnt))
         painter.restore()
 
 
@@ -416,6 +401,9 @@ class AutoFadeScrollBar(QScrollBar):
 
     def _fade_to(self, target: float):
         self._anim.stop()
+        if not motion_enabled():
+            self._fx.setOpacity(1.0)
+            return
         self._anim.setStartValue(self._fx.opacity())
         self._anim.setEndValue(target)
         self._anim.start()
@@ -431,12 +419,66 @@ class AutoFadeScrollBar(QScrollBar):
 
 
 class NoteList(QListWidget):
-    """支持把笔记拖到左侧主题上的列表。"""
+    """支持键盘、多选及跨主题拖动的自适应网格。"""
 
     MIME = "application/x-timo-note"
     deleteRequested = pyqtSignal(list)
+    openRequested = pyqtSignal(QListWidgetItem)
+
+    def __init__(self, parent=None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.open_on_click = True
+        self._may_open = False
+        self.card_opacity = 1.0
+        self._reveal = QVariantAnimation(self)
+        self._reveal.setDuration(120)
+        self._reveal.setStartValue(0.68)
+        self._reveal.setEndValue(1.0)
+        self._reveal.setEasingCurve(QEasingCurve.OutCubic)
+        self._reveal.valueChanged.connect(self._set_card_opacity)
+        self.itemClicked.connect(self._activate_clicked)
+
+    def update_grid(self):
+        if self.viewMode() != QListView.IconMode:
+            return
+        width = max(1, self.viewport().width() - 14)
+        columns = max(1, width // 264)
+        size = QSize(width // columns, 166)
+        if size != self.gridSize():
+            self.setGridSize(size)
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self.update_grid()
+
+    def reveal_cards(self):
+        self._reveal.stop()
+        if self.isVisible() and motion_enabled():
+            self._set_card_opacity(0.68)
+            self._reveal.start()
+        else:
+            self._set_card_opacity(1.0)
+
+    def _set_card_opacity(self, opacity):
+        self.card_opacity = float(opacity)
+        self.viewport().update()
+
+    def _activate_clicked(self, item):
+        if self._may_open and self.open_on_click:
+            self.openRequested.emit(item)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        modifiers = Qt.ControlModifier | Qt.ShiftModifier | Qt.AltModifier
+        self._may_open = event.button() == Qt.LeftButton and not event.modifiers() & modifiers
+        try:
+            super().mouseReleaseEvent(event)
+        finally:
+            self._may_open = False
 
     def keyPressEvent(self, e):  # noqa: N802
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter) and self.open_on_click and self.currentItem():
+            self.openRequested.emit(self.currentItem())
+            return
         if e.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             ids = [i.data(Qt.UserRole) for i in self.selectedItems() if i.data(Qt.UserRole)]
             if ids:
@@ -478,10 +520,16 @@ class TopicList(QListWidget):
         self.setDragDropMode(QListWidget.DragDrop)
         self.setDefaultDropAction(Qt.MoveAction)
         self._drag_row = -1
+        self._drop_before = -1
+        self._drop_target = -1
 
     def startDrag(self, actions):  # noqa: N802
         self._drag_row = self.currentRow()
-        super().startDrag(actions)
+        try:
+            super().startDrag(actions)
+        finally:
+            self._drag_row = -1
+            self._clear_drop_mark()
 
     def _is_note(self, e) -> bool:
         return e.mimeData().hasFormat(NoteList.MIME)
@@ -497,18 +545,53 @@ class TopicList(QListWidget):
 
     def dragMoveEvent(self, e):  # noqa: N802
         if self._is_note(e):
+            row = self.indexAt(e.pos()).row()
+            self._set_drop_mark(-1, row)
             e.acceptProposedAction()
             return
         if self._is_self_drag(e):
+            before = self._insertion_row(e.pos())
+            self._set_drop_mark(before if before not in (self._drag_row, self._drag_row + 1) else -1, -1)
             e.acceptProposedAction()
             return
         super().dragMoveEvent(e)
 
+    def dragLeaveEvent(self, e):  # noqa: N802
+        self._clear_drop_mark()
+        super().dragLeaveEvent(e)
+
+    def _set_drop_mark(self, before: int, target: int):
+        if (before, target) != (self._drop_before, self._drop_target):
+            self._drop_before, self._drop_target = before, target
+            self.viewport().update()
+
+    def _clear_drop_mark(self):
+        self._set_drop_mark(-1, -1)
+
+    def paintEvent(self, event):  # noqa: N802
+        super().paintEvent(event)
+        if self._drop_before < 0 and self._drop_target < 0:
+            return
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor(C["accent_text"]), 2, Qt.SolidLine, Qt.RoundCap))
+        if self._drop_target >= 0 and (item := self.item(self._drop_target)) is not None:
+            painter.drawRoundedRect(QRectF(self.visualItemRect(item)).adjusted(3, 2, -4, -2), 7, 7)
+        elif self._drop_before >= 0 and self.count():
+            after = self._drop_before >= self.count()
+            rect = self.visualItemRect(self.item(min(self._drop_before, self.count() - 1)))
+            y = rect.bottom() - 1 if after else rect.top() + 1
+            painter.drawLine(8, y, self.viewport().width() - 8, y)
+
+    def _insertion_row(self, pos):
+        index = self.indexAt(pos)
+        if not index.isValid():
+            return self.count()
+        return index.row() + int(pos.y() > self.visualRect(index).center().y())
+
     def _move_row(self, e) -> None:
         src = self._drag_row
-        row = self.indexAt(e.pos()).row()
-        if row < 0:
-            row = self.count()
+        row = self._insertion_row(e.pos())
         if src < 0 or row == src or row == src + 1:
             return
         item = self.takeItem(src)
@@ -521,6 +604,7 @@ class TopicList(QListWidget):
         self.topicsReordered.emit()
 
     def dropEvent(self, e):  # noqa: N802
+        self._clear_drop_mark()
         if self._is_self_drag(e) and not self._is_note(e):
             e.acceptProposedAction()
             self._move_row(e)

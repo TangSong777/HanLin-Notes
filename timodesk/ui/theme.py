@@ -260,23 +260,28 @@ QWidget {{
     font-size: {int(13 * s)}px;
     color: {C['ink']};
 }}
-QMainWindow, #Root, #Body {{ background: {C['canvas']}; }}
+QMainWindow, #Root, #Workbench, #LibraryPage, #DocumentPage {{ background: {C['canvas']}; }}
 
-/* ---------- 窗口标题 ---------- */
-#TitleBar, QLabel#TitleBrand {{ background: transparent; border: none; }}
-QLabel#TitleBrand, QLabel#DialogTitle, #ListHeader, QLineEdit#NoteTitle,
-QLabel#WelcomeTitle, QLabel#SetupTitle, QLabel#AboutTitle {{
+/* 顶栏 */
+#TitleBar {{
+    background: {C['card']}; border-bottom: 1px solid {C['card_border']};
+}}
+QLabel#TitleBrand, QLabel#DialogTitle, QLabel#CollectionTitle, QLineEdit#NoteTitle, QLabel#GeneratedTitle,
+QLabel#WelcomeTitle, QLabel#SetupTitle, QLabel#AboutTitle, QLabel#DateBig, QLabel#BrandPanelName {{
     font-family: {heading_font}; font-weight: {heading_weight};
 }}
-QLabel#TitleBrand {{ color: {C['ink']}; font-size: {int(14 * s)}px; }}
+QLabel#TitleBrand {{ color: {C['ink']}; font-size: {int(16 * s)}px; }}
 #DialogTitleBar {{
-    background: {C['card']}; border-bottom: 1px solid {C['line_soft']};
+    background: {C['card_soft']}; border-bottom: 1px solid {C['line']};
     border-top-left-radius: 12px; border-top-right-radius: 12px;
 }}
-QLabel#DialogTitle {{ color: {C['ink']}; font-size: {int(13 * s)}px; }}
+QLabel#DialogTitle {{ color: {C['ink']}; font-size: {int(15 * s)}px; }}
 QLabel#WelcomeTitle {{ font-size: {int(30 * s)}px; }}
 QLabel#SetupTitle {{ font-size: {int(26 * s)}px; }}
 QLabel#AboutTitle {{ font-size: {int(19 * s)}px; }}
+QFrame#BrandPanel {{ background: {C['card_soft']}; border-right: 1px solid {C['line']}; }}
+QLabel#BrandPanelName {{ font-size: {int(18 * s)}px; }}
+QLabel#DialogSymbol {{ background: {C['checked_bg']}; border-radius: 9px; }}
 QLabel#WelcomeSub, QLabel#SetupHint {{ color: {C['muted']}; }}
 QLabel#WelcomeDesc {{ color: {C['ink_soft']}; }}
 QToolButton#WinBtn, QToolButton#CloseBtn, QToolButton#DialogClose {{ font-size: {int(12 * s)}px; }}
@@ -284,158 +289,131 @@ QToolButton#CloseBtn:hover, QToolButton#DialogClose:hover {{
     background: {C['danger_soft']}; color: {C['danger']};
 }}
 
-/* ---------- 卡片容器 ---------- */
-#Sidebar {{
-    background: {C['sidebar']};
-}}
-#ListPane, #EditorPane {{
-    background: {C['card']};
-}}
-#Sidebar, #ListPane, #EditorPane {{
-    border: 1px solid {C['card_border']};
-    border-radius: 12px;
-}}
-
-/* ---------- 侧栏 ---------- */
-#Brand {{
-    font-family: {C['font_text']};
-    font-size: {int(23 * s)}px;
-    font-weight: 600;
-    color: {C['ink']};
-    letter-spacing: 0.4px;
-}}
-#BrandSub {{ color: {C['muted']}; font-size: {int(11 * s)}px; }}
-#SideSection {{ color: {C['faint']}; font-size: {int(11 * s)}px; font-weight: 600; padding: 2px 6px; }}
-#NewTopicBtn {{
-    background: {C['card']}; border: 1px solid {C['card_border']};
-    border-radius: 7px; color: {C['muted']}; padding: 8px 10px;
-}}
-#NewTopicBtn:hover {{ border-color: {C['card_border_strong']}; color: {C['ink']}; background: {C['hover_bg']}; }}
-
-QListWidget#TopicList, QListWidget#NavList {{
-    background: transparent; border: none;
-}}
-QListWidget#NavList::item {{
-    border: 1px solid transparent;
-    border-radius: 10px; padding: 10px 12px; margin: 2px 4px;
-    color: {C['ink_soft']};
-}}
-QListWidget#NavList::item:selected {{
-    background: {C['checked_bg']}; color: {C['accent_text']};
-    border: 1px solid {C['card_border_strong']};
-    border-left: 2px solid {C['accent']};
-}}
-QListWidget#NavList::item:hover:!selected {{
-    background: {C['card_hover']};
-}}
-
-QListWidget#Wall {{ background: transparent; border: none; }}
-QListWidget#Wall::item {{ border: 1px solid transparent; border-radius: 10px; margin: 2px; }}
-QListWidget#Wall::item:hover {{ background: {C['card_hover']}; }}
-QListWidget#Wall::item:selected {{ background: {C['checked_bg']}; border-color: {C['accent']}; }}
-
-/* ---------- 中栏 ---------- */
-#ListHeader {{ font-size: {int(18 * s)}px; color: {C['ink']}; }}
-#CountLabel {{ color: {C['faint']}; font-size: {int(11 * s)}px; }}
-
 QLineEdit {{
     background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 5px;
     padding: 8px 11px; color: {C['ink']};
     selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
 QLineEdit:focus {{ border-color: {C['accent_text']}; }}
-
 QLineEdit#Search {{
-    background: {C['input_bg']}; border: 1px solid transparent; border-radius: 5px;
-    padding: 9px 14px;
+    background: {C['paper_alt']}; border: 1px solid {C['line']}; border-radius: 8px;
+    padding: 5px 10px; font-size: {int(13 * s)}px;
 }}
 QLineEdit#Search:focus {{ background: {C['card']}; border-color: {C['accent_text']}; }}
-
-QFrame#FindBar {{ background: {C['paper_alt']}; border: none; border-top: 1px solid {C['line']}; border-bottom: 1px solid {C['line']}; }}
-QFrame#FindBar QLineEdit {{
-    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 5px;
-    padding: 4px 9px;
+QPushButton#NewNoteBtn {{
+    border-top-left-radius: 8px; border-bottom-left-radius: 8px;
+    border-top-right-radius: 0; border-bottom-right-radius: 0;
+    padding: 6px 13px; font-weight: 600;
 }}
-QFrame#FindBar QLineEdit:focus {{ border-color: {C['accent_text']}; }}
-QFrame#FindBar QToolButton {{ border: none; border-radius: 6px; padding: 3px 6px; color: {C['muted']}; }}
-QFrame#FindBar QToolButton:hover {{ background: {C['hover_bg']}; color: {C['ink']}; }}
+QToolButton#NewTypeBtn {{
+    border-top-right-radius: 8px; border-bottom-right-radius: 8px;
+    border-top-left-radius: 0; border-bottom-left-radius: 0;
+}}
+QToolButton#NewTypeBtn::menu-indicator {{ image: none; width: 0; }}
+
+/* 资料库 */
+#NavigationRail {{ background: {C['paper_alt']}; border-right: 1px solid {C['line']}; }}
+#RailFooter {{ border-top: 1px solid {C['line']}; }}
+#RailLabel {{ color: {C['muted']}; font-size: {int(11 * s)}px; font-weight: 600; padding-left: 9px; }}
+QToolButton#RailIcon {{ padding: 4px; }}
+QToolButton#DataButton {{ padding: 8px 9px; text-align: left; }}
+#SideSection {{ color: {C['muted']}; font-size: {int(11 * s)}px; font-weight: 600; padding: 2px 6px; }}
+QListWidget#TopicList, QListWidget#NavList {{ background: transparent; border: none; }}
+QListWidget#NavList::item {{
+    border: 1px solid transparent; border-radius: 8px; padding: 4px 7px;
+    margin: 2px 0; color: {C['ink_soft']};
+}}
+QListWidget#NavList::item:selected {{
+    background: {C['checked_bg']}; color: {C['accent_text']}; border-left: 2px solid {C['accent']};
+}}
+QListWidget#NavList::item:hover:!selected {{ background: {C['card_hover']}; }}
+#CollectionHeader {{ border-bottom: 1px solid {C['card_border_strong']}; }}
+QLabel#CollectionTitle {{ font-size: {int(31 * s)}px; }}
+QLabel#CollectionCount {{ color: {C['muted']}; font-size: {int(12 * s)}px; }}
+QToolButton#CollectionControl {{
+    background: {C['card']}; border: 1px solid {C['card_border']};
+    border-radius: 7px; padding: 7px 10px;
+}}
+QToolButton#CollectionControl:hover, QToolButton#CollectionControl:focus {{ border-color: {C['accent_text']}; }}
+QToolButton#CollectionControl:checked {{ background: {C['checked_bg']}; color: {C['accent_text']}; }}
+QToolButton#CollectionControl::menu-indicator, QToolButton#DataButton::menu-indicator,
+QToolButton#NoteAction::menu-indicator {{ image: none; width: 0; }}
+QListWidget#NoteGrid {{ background: {C['canvas']}; border: none; }}
+QListWidget#NoteGrid::item {{ background: transparent; border: none; }}
+QLabel#LibraryEmptyIcon {{
+    background: {C['checked_bg']}; border: 1px solid {C['card_border']}; border-radius: 12px;
+}}
+QLabel#ListEmpty {{ color: {C['muted']}; font-size: {int(16 * s)}px; }}
+
+/* 文档 */
+#NotePaper {{ background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 12px; }}
+#DocumentHeading {{ border-bottom: 1px solid {C['line']}; }}
+QToolButton#BackToLibrary {{ color: {C['accent_text']}; font-weight: 600; padding: 6px 7px; }}
+QLabel#DocumentTopic {{
+    color: {C['muted']}; border-left: 1px solid {C['card_border_strong']}; padding-left: 12px;
+}}
+QLabel#DocumentTypeIcon {{ background: {C['checked_bg']}; border-radius: 7px; }}
+QLabel#DocumentType {{ color: {C['accent_text']}; font-size: {int(12 * s)}px; padding-left: 3px; }}
+QToolButton#NoteAction {{ padding: 5px 7px; }}
+QLabel#GeneratedTitle, QLineEdit#NoteTitle {{
+    font-size: {int(30 * s)}px; padding: 3px 0; color: {C['ink']};
+}}
+QLineEdit#NoteTitle {{ background: transparent; border: none; border-bottom: 1px solid transparent; }}
+QLineEdit#NoteTitle:focus {{ border-bottom-color: {C['accent_text']}; }}
+QFrame#DocumentFooter {{
+    background: {C['card_soft']}; border-top: 1px solid {C['line']};
+    border-bottom-left-radius: 11px; border-bottom-right-radius: 11px;
+}}
+QLabel#SaveState {{ color: {C['muted']}; font-size: {int(11 * s)}px; }}
+
+QFrame#FormatBar {{ background: {C['card']}; border-bottom: 1px solid {C['line']}; }}
+QToolButton#FormatControl {{ padding: 2px; }}
+QFrame#ModeSwitch {{ background: {C['paper_alt']}; border: 1px solid {C['line']}; border-radius: 8px; }}
+QToolButton#ModeOption {{ padding: 4px 12px; color: {C['muted']}; border-radius: 5px; border: 1px solid transparent; }}
+QToolButton#ModeOption:checked {{ background: {C['card']}; color: {C['accent_text']}; border-color: {C['card_border']}; }}
+QToolButton#ModeOption:focus {{ border-color: {C['accent_text']}; }}
+QFrame#SourceSheet {{ background: {C['paper_alt']}; }}
+QFrame#PreviewSheet {{ background: {C['card']}; }}
+QLabel#SheetCaption {{ color: {C['muted']}; font-size: {int(11 * s)}px; padding: 10px 24px 3px; }}
+QPlainTextEdit#Editor, QTextBrowser#Preview {{
+    border: none; padding: 8px 24px 15px;
+    font-family: {C['font_text']}; font-size: {int(15 * s)}px; color: {C['ink']};
+    selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
+}}
+QPlainTextEdit#Editor {{ background: {C['paper_alt']}; }}
+QTextBrowser#Preview {{ background: {C['card']}; }}
+QFrame#FindBar {{ background: {C['paper_alt']}; border-bottom: 1px solid {C['line']}; }}
+QFrame#FindBar QLineEdit {{ padding: 4px 9px; }}
+QFrame#FindBar QToolButton {{ padding: 3px 6px; }}
 #FindCount {{ color: {C['muted']}; font-size: {int(11 * s)}px; }}
 QLabel#FieldLabel {{ color: {C['muted']}; font-size: {int(12 * s)}px; }}
 
-#ListEmpty {{ color: {C['faint']}; font-size: {int(12 * s)}px; }}
-QListWidget#NoteList {{ background: {C['card']}; border: none; padding: 4px 2px; }}
-QListWidget#NoteList::item {{ border: none; margin: 0px; }}
+QFrame#FieldCard, QFrame#DateHero, QFrame#SettingsGroup {{
+    background: {C['card_soft']}; border: 1px solid {C['card_border']}; border-radius: 10px;
+}}
+QLabel#FieldHeading {{ font-size: {int(14 * s)}px; font-weight: 600; }}
+QLabel#DateBig {{ font-size: {int(33 * s)}px; color: {C['ink']}; }}
+QLabel#DateSub {{ color: {C['muted']}; font-size: {int(13 * s)}px; }}
+QPlainTextEdit#FieldDescription {{
+    background: {C['card']}; border: 1px solid {C['line']}; border-radius: 6px;
+    padding: 9px 10px; font-family: {C['font_text']}; font-size: {int(14 * s)}px;
+}}
+QPlainTextEdit#FieldDescription:focus {{ border-color: {C['accent_text']}; }}
+QListWidget#Wall {{ background: {C['card_soft']}; border: 1px solid {C['line']}; border-radius: 8px; }}
+QListWidget#Wall::item {{ border: 1px solid transparent; border-radius: 8px; margin: 2px; }}
+QListWidget#Wall::item:hover {{ background: {C['card_hover']}; }}
+QListWidget#Wall::item:selected {{ background: {C['checked_bg']}; border-color: {C['accent']}; }}
 
-QPushButton#NewNoteBtn {{
-    border-top-left-radius: 7px; border-bottom-left-radius: 7px;
-    border-top-right-radius: 0; border-bottom-right-radius: 0;
-    padding: 9px 14px; font-weight: 600;
-}}
-QToolButton#SortBtn {{
-    border: none; background: transparent; border-radius: 7px;
-    color: {C['muted']}; font-size: {int(13 * s)}px;
-}}
-QToolButton#SortBtn:hover {{ background: {C['paper_alt']}; color: {C['ink']}; }}
-QToolButton#SortBtn:pressed {{ background: {C['line']}; }}
-QToolButton#SortBtn::menu-indicator {{ image: none; width: 0px; }}
-
-QToolButton#NewTypeBtn {{
-    border-top-right-radius: 7px; border-bottom-right-radius: 7px;
-    border-top-left-radius: 0; border-bottom-left-radius: 0;
-    font-size: {int(11 * s)}px;
-}}
-QToolButton#NewTypeBtn::menu-indicator {{ image: none; width: 0px; }}
-
-/* ---------- 编辑区 ---------- */
-#EditorTopBar {{ border-bottom: 1px solid {C['line_soft']}; }}
-#TypeBadge {{
-    color: {C['ink_soft']}; background: {C['hover_bg']};
-    border-radius: 7px; padding: 3px 9px; font-size: {int(11 * s)}px; font-weight: 600;
-}}
-#SaveState {{ color: {C['faint']}; font-size: {int(11 * s)}px; }}
-
-QLineEdit#NoteTitle {{
-    background: transparent; border: none; border-bottom: 1px solid transparent; padding: 2px 0;
-    font-size: {int(24 * s)}px; color: {C['ink']};
-}}
-QLineEdit#NoteTitle::placeholder {{ color: {C['faint']}; }}
-QLineEdit#NoteTitle:focus {{ border-bottom-color: {C['accent_text']}; }}
-
-QPlainTextEdit#Editor {{
-    background: {C['card']}; border: none; padding: 18px 26px;
-    font-family: {C['font_text']}; font-size: {int(15 * s)}px; color: {C['ink']};
-    selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
-}}
-QTextBrowser#Preview {{
-    background: {C['paper_alt']}; border: none; border-left: 1px solid {C['line']};
-    padding: 18px 26px;
-    font-family: {C['font_text']}; font-size: {int(15 * s)}px; color: {C['ink']};
-    selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
-}}
-
-/* 格式栏：一条浅浅的卡片 */
-#FormatBar {{
-    background: {C['card']}; border: 1px solid {C['line_soft']};
-    border-radius: 12px; margin: 6px 16px 2px 16px;
-}}
 QDateEdit, QTimeEdit {{
     background: {C['card']}; border: 1px solid {C['line']};
     border-radius: 5px; padding: 6px 8px; min-height: 18px;
     selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
 QDateEdit:focus, QTimeEdit:focus {{ border-color: {C['accent_text']}; }}
-
-/* 类型页内部的小卡片（账号 / 日子 / 链接） */
-#Card {{
-    background: {C['card_soft']}; border: 1px solid {C['card_border']};
-    border-radius: 12px;
+QLabel#Notice {{
+    background: {C['ink']}; color: {C['on_ink']}; border-left: 3px solid {C['accent']};
+    border-radius: 8px; padding: 10px 14px;
 }}
-#Card QLabel {{ color: {C['muted']}; font-size: {int(12 * s)}px; background: transparent; border: none; }}
-#Card QLineEdit {{
-    background: transparent; border: none; border-radius: 5px; padding: 6px 4px;
-    font-size: {int(15 * s)}px;
-}}
-#Card QLineEdit:focus {{ background: {C['card']}; }}
 
 QToolButton {{
     background: transparent; border: none; border-radius: 7px; padding: 5px 7px; color: {C['ink_soft']};
@@ -451,15 +429,15 @@ QPushButton {{
 }}
 QPushButton:hover {{ border-color: {C['accent_text']}; background: {C['hover_bg']}; }}
 QPushButton:pressed {{ background: {C['press_bg']}; }}
-QPushButton:default, QPushButton#Primary, QPushButton#WelcomePrimary,
+QPushButton:default, QPushButton#Primary, QPushButton#WelcomePrimary, QPushButton#MiniPrimary,
 QPushButton#NewNoteBtn, QToolButton#NewTypeBtn {{
     background: {C['accent']}; color: {C['on_accent']}; border: none;
 }}
-QPushButton:default:hover, QPushButton#Primary:hover, QPushButton#WelcomePrimary:hover,
+QPushButton:default:hover, QPushButton#Primary:hover, QPushButton#WelcomePrimary:hover, QPushButton#MiniPrimary:hover,
 QPushButton#NewNoteBtn:hover, QToolButton#NewTypeBtn:hover {{
     background: {C['accent_hover']}; color: {C['on_accent_hover']};
 }}
-QPushButton:default:pressed, QPushButton#Primary:pressed, QPushButton#WelcomePrimary:pressed,
+QPushButton:default:pressed, QPushButton#Primary:pressed, QPushButton#WelcomePrimary:pressed, QPushButton#MiniPrimary:pressed,
 QPushButton#NewNoteBtn:pressed, QToolButton#NewTypeBtn:pressed {{
     background: {C['accent_pressed']}; color: {C['on_accent_hover']};
 }}
@@ -483,7 +461,8 @@ QPushButton#Danger {{
 }}
 QPushButton#Danger:hover {{ background: {C['card']}; }}
 QPushButton#Danger:pressed {{ background: {C['press_bg']}; }}
-QPushButton:disabled, QPushButton#Primary:disabled, QPushButton#Danger:disabled, QToolButton:disabled {{
+QPushButton:disabled, QPushButton#Primary:disabled, QPushButton#Danger:disabled, QPushButton#MiniPrimary:disabled,
+QToolButton:disabled {{
     color: {C['faint']}; border-color: {C['line']}; background: {C['paper_alt']};
 }}
 
@@ -565,11 +544,6 @@ QSplitter::handle:horizontal {{ width: 1px; }}
 #WordLabel, #TimeLabel {{ color: {C['muted']}; font-size: 11px; }}
 #FmtSep {{ background: {C['line']}; border: none; }}
 #GalleryHint, #AccountTip {{ color: {C['muted']}; font-size: 11px; }}
-#NoteDesc {{
-    background: {C['card']}; border: 1px solid {C['card_border_strong']}; border-radius: 12px; padding: 12px 16px;
-}}
-QLabel#DateBig {{ color: {C['ink']}; font-size: 40px; font-weight: 500; background: transparent; border: none; }}
-QLabel#DateSub {{ color: {C['muted']}; font-size: 13px; background: transparent; border: none; }}
 """
 
 

@@ -1,21 +1,17 @@
-"""主窗口：三栏布局 —— 主题侧栏 / 笔记列表 / 编辑器。"""
+"""主窗口，组织笔记库、文档页和全局操作。"""
 from __future__ import annotations
 
 from ctypes import wintypes
 from pathlib import Path
 
 from PyQt5.QtCore import (
-    QAbstractAnimation,
-    QEasingCurve,
     QEvent,
     QPoint,
-    QPropertyAnimation,
-    QRectF,
     QSize,
     Qt,
     QTimer,
 )
-from PyQt5.QtGui import QColor, QCursor, QKeySequence, QPainter, QPen
+from PyQt5.QtGui import QCursor, QKeySequence
 from PyQt5.QtWidgets import (
     QPlainTextEdit,
     QTextBrowser,
@@ -23,7 +19,6 @@ from PyQt5.QtWidgets import (
     QApplication,
     QFileDialog,
     QFrame,
-    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -34,9 +29,9 @@ from PyQt5.QtWidgets import (
     QMenu,
     QPushButton,
     QShortcut,
+    QSizePolicy,
     QSystemTrayIcon,
     QToolButton,
-    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -50,7 +45,7 @@ from ..importer import import_export
 from ..store import NOTE_TYPES, TYPE_LABELS, Library, Note
 from .dialogs import DuplicatesDialog, ProgressDialog, confirm, error, info
 from .editor import NoteEditor
-from .theme import C, NOTE_COLORS, apply_theme, color_icon, is_dark, resolve as resolve_theme
+from .theme import NOTE_COLORS, apply_theme, color_icon, resolve as resolve_theme
 from .title_bar import (
     FrameEdge,
     HTBOTTOM,
@@ -67,85 +62,11 @@ from .title_bar import (
     rounded_mask,
 )
 from .widgets import AutoFadeScrollBar, NoteCardDelegate, NoteList, TopicDelegate, TopicList
-
-
-class _Body(QWidget):
-    """在三块面板下方手绘一层柔和投影。
-
-    不用 QGraphicsDropShadowEffect —— 它会把子控件离屏渲染，
-    长列表滚动时既费性能，也会让裁剪区域错位。
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.panes: list[QWidget] = []
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if not self.panes:
-            return
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing, True)
-        p.setBrush(Qt.NoBrush)
-        radius = 12
-        peak = 24 if is_dark() else 15
-        for pane in self.panes:
-            if pane.isHidden():
-                continue
-            tl = pane.mapTo(self, QPoint(0, 0))
-            r = QRectF(
-                tl.x() + 0.5, tl.y() + 0.5, float(pane.width()) - 1.0, float(pane.height()) - 1.0
-            )
-            for step in range(1, 11):
-                alpha = round(peak * (1.0 - (step - 1) / 10) ** 2)
-                p.setPen(QPen(QColor(0, 0, 0, alpha), 1))
-                p.drawRoundedRect(
-                    r.adjusted(-step, 2 - step, step, step + 2),
-                    radius + step,
-                    radius + step,
-                )
+from .visuals import Notice, WorkspaceStack, glyph
 
 
 class ImportCanceled(Exception):
     """用户在导入进度条上点了取消。"""
-
-
-def _line_icon(kind: str):
-    """绘制导航和搜索使用的 14 px 线条图标。"""
-    from PyQt5.QtGui import QIcon, QPainterPath, QPixmap
-
-    icon = QIcon()
-    for mode, color in ((QIcon.Normal, C["muted"]), (QIcon.Selected, C["accent_text"])):
-        pixmap = QPixmap(28, 28)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.scale(2, 2)
-        painter.setPen(QPen(QColor(color), 1.25, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        if kind == "search":
-            painter.drawEllipse(QRectF(1.5, 1.5, 8, 8))
-            painter.drawLine(QPoint(9, 9), QPoint(12, 12))
-        elif kind == "all":
-            painter.drawRoundedRect(QRectF(3, 1.5, 8, 11), 1.3, 1.3)
-            painter.drawLine(5, 5, 9, 5)
-            painter.drawLine(5, 8, 9, 8)
-        elif kind == "archived":
-            painter.drawRoundedRect(QRectF(2.5, 4.5, 9, 8), 1.3, 1.3)
-            painter.drawRoundedRect(QRectF(1.5, 1.5, 11, 3), 0.9, 0.9)
-            painter.drawLine(6, 8, 8, 8)
-        else:
-            bin_outline = QPainterPath()
-            bin_outline.moveTo(3, 4)
-            bin_outline.lineTo(4, 12)
-            bin_outline.lineTo(10, 12)
-            bin_outline.lineTo(11, 4)
-            painter.drawPath(bin_outline)
-            painter.drawLine(2, 4, 12, 4)
-            painter.drawLine(5, 2, 9, 2)
-        painter.end()
-        pixmap.setDevicePixelRatio(2)
-        icon.addPixmap(pixmap, mode)
-    return icon
 
 
 class MainWindow(QMainWindow):
@@ -185,53 +106,115 @@ class MainWindow(QMainWindow):
         self.refresh_topics()
         self._restore_view()
 
-    # ---------------- 布局 ----------------
+    # ---------------- 工作台 ----------------
     def _build_ui(self):
         central = QWidget(objectName="Root")
         self.setCentralWidget(central)
         outer = QVBoxLayout(central)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(1, 1, 1, 1)
         outer.setSpacing(0)
-
-        self.title_bar = TitleBar(self)
+        self.title_bar = TitleBar(self, self._build_commands())
         outer.addWidget(self.title_bar)
 
-        body = _Body(objectName="Body")
-        outer.addWidget(body, 1)
-        h = QHBoxLayout(body)
-        h.setContentsMargins(20, 14, 20, 18)
-        h.setSpacing(12)
+        workbench = QWidget(objectName="Workbench")
+        workbench.setAttribute(Qt.WA_StyledBackground, True)
+        layout = QHBoxLayout(workbench)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._build_navigation())
+        self.workspace = WorkspaceStack()
+        self.library_page = self._build_library_page()
+        self.document_page = self._build_document_page()
+        self.workspace.addWidget(self.library_page)
+        self.workspace.addWidget(self.document_page)
+        layout.addWidget(self.workspace, 1)
+        outer.addWidget(workbench, 1)
 
-        # ===== 侧栏 =====
-        sidebar = QFrame(objectName="Sidebar")
-        sidebar.setFixedWidth(224)
-        sb = QVBoxLayout(sidebar)
-        sb.setContentsMargins(14, 16, 12, 14)
-        sb.setSpacing(6)
+        self.statusBar().hide()
+        self._edge = FrameEdge(central)
+        self._edge.setGeometry(central.rect())
+        self._edge.raise_()
+        self.notice = Notice(central)
+        self._sync_chrome_icons()
 
+    def _build_commands(self):
+        commands = QWidget(objectName="Commands")
+        row = QHBoxLayout(commands)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self.search = QLineEdit(objectName="Search")
+        self.search.setAccessibleName("全库搜索")
+        self.search.setPlaceholderText("搜索笔记    Ctrl+F")
+        self.search.setFixedHeight(36)
+        self.search.setMinimumWidth(240)
+        self.search.setMaximumWidth(488)
+        self._search_action = self.search.addAction(glyph("search"), QLineEdit.LeadingPosition)
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._on_search_changed)
+        self.search.returnPressed.connect(self._open_search_result)
+        esc_search = QShortcut(QKeySequence("Escape"), self.search)
+        esc_search.setContext(Qt.WidgetShortcut)
+        esc_search.activated.connect(self._reset_search)
+        row.addWidget(self.search, 1)
+        row.addStretch(1)
+
+        self.btn_new_note = QPushButton("新建笔记", objectName="NewNoteBtn")
+        self.btn_new_note.setFixedHeight(36)
+        self.btn_new_note.setToolTip("新建便签（Ctrl+N）")
+        self.btn_new_note.clicked.connect(lambda: self.new_note("note"))
+        row.addWidget(self.btn_new_note)
+        self.btn_new_type = QToolButton(objectName="NewTypeBtn")
+        self.btn_new_type.setFixedSize(32, 36)
+        self.btn_new_type.setToolTip("选择笔记类型")
+        self.btn_new_type.setAccessibleName("选择笔记类型")
+        self.btn_new_type.setPopupMode(QToolButton.InstantPopup)
+        self.type_menu = QMenu(self)
+        for kind in NOTE_TYPES:
+            action = self.type_menu.addAction(TYPE_LABELS[kind], lambda _=False, k=kind: self.new_note(k))
+            action.setData(kind)
+        self.btn_new_type.setMenu(self.type_menu)
+        row.addWidget(self.btn_new_type)
+        return commands
+
+    def _build_navigation(self):
+        rail = QFrame(objectName="NavigationRail")
+        rail.setFixedWidth(214)
+        rail.setAttribute(Qt.WA_StyledBackground, True)
+        column = QVBoxLayout(rail)
+        column.setContentsMargins(14, 24, 14, 14)
+        column.setSpacing(8)
+        label = QLabel("资料库", objectName="RailLabel")
+        column.addWidget(label)
         self.nav = QListWidget(objectName="NavList")
         self.nav.setFrameShape(QListWidget.NoFrame)
-        self.nav.setFixedHeight(3 * 38)
-        self.nav.setIconSize(QSize(14, 14))
-        for key, label in (("all", "全部笔记"), ("archived", "归档"), ("trash", "回收站")):
-            it = QListWidgetItem(_line_icon(key), label)
-            it.setData(Qt.UserRole, key)
-            it.setSizeHint(QSize(0, 38))
-            self.nav.addItem(it)
+        self.nav.setFixedHeight(114)
+        self.nav.setIconSize(QSize(16, 16))
+        self.nav.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        for kind, caption in (("all", "全部笔记"), ("archived", "归档"), ("trash", "回收站")):
+            item = QListWidgetItem(caption)
+            item.setData(Qt.UserRole, kind)
+            item.setSizeHint(QSize(0, 38))
+            self.nav.addItem(item)
         self.nav.currentRowChanged.connect(self._on_nav_changed)
-        sb.addWidget(self.nav)
+        self.nav.itemClicked.connect(lambda _: self._show_library())
+        column.addWidget(self.nav)
+        column.addSpacing(17)
 
-        sb.addSpacing(6)
-        sec = QHBoxLayout()
-        sec_label = QLabel("主题", objectName="SideSection")
-        sec.addWidget(sec_label)
-        sec.addStretch(1)
-        btn_add_topic = QToolButton()
-        btn_add_topic.setText("＋")
-        btn_add_topic.setToolTip("新建主题")
-        btn_add_topic.clicked.connect(self.new_topic)
-        sec.addWidget(btn_add_topic)
-        sb.addLayout(sec)
+        topics_header = QHBoxLayout()
+        topics_header.setSpacing(2)
+        topics_header.addWidget(QLabel("主题", objectName="RailLabel"))
+        topics_header.addStretch()
+        self.btn_topic_sort = QToolButton(objectName="RailIcon")
+        self.btn_topic_sort.setToolTip("主题排序")
+        self.btn_topic_sort.setAccessibleName("主题排序")
+        self.btn_topic_sort.clicked.connect(lambda: self._show_topic_sort(self.btn_topic_sort))
+        topics_header.addWidget(self.btn_topic_sort)
+        self.btn_add_topic = QToolButton(objectName="RailIcon")
+        self.btn_add_topic.setToolTip("新建主题（Ctrl+Shift+N）")
+        self.btn_add_topic.setAccessibleName("新建主题")
+        self.btn_add_topic.clicked.connect(self.new_topic)
+        topics_header.addWidget(self.btn_add_topic)
+        column.addLayout(topics_header)
 
         self.topic_list = TopicList(objectName="TopicList")
         self.topic_list.setVerticalScrollBar(AutoFadeScrollBar(Qt.Vertical, self.topic_list))
@@ -241,169 +224,276 @@ class MainWindow(QMainWindow):
         self.topic_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.topic_list.customContextMenuRequested.connect(self._topic_menu)
         self.topic_list.currentRowChanged.connect(self._on_topic_changed)
+        self.topic_list.itemClicked.connect(lambda _: self._show_library())
         self.topic_list.notesDropped.connect(self._on_notes_dropped)
         self.topic_list.topicsReordered.connect(self._on_topics_reordered)
-        sb.addWidget(self.topic_list, 1)
+        column.addWidget(self.topic_list, 1)
 
-        sb.addSpacing(4)
-        btn_topic = QPushButton("＋ 新建主题", objectName="NewTopicBtn")
-        btn_topic.clicked.connect(self.new_topic)
-        sb.addWidget(btn_topic)
+        footer = QFrame(objectName="RailFooter")
+        foot = QVBoxLayout(footer)
+        foot.setContentsMargins(0, 8, 0, 0)
+        foot.setSpacing(3)
+        self.btn_data = QToolButton(objectName="DataButton")
+        self.btn_data.setText("数据与设置")
+        self.btn_data.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.btn_data.setPopupMode(QToolButton.InstantPopup)
+        self.btn_data.setMenu(self._build_data_menu())
+        foot.addWidget(self.btn_data)
+        self.total_label = QLabel(objectName="TotalLabel")
+        foot.addWidget(self.total_label)
+        column.addWidget(footer)
+        return rail
 
-        bottom = QHBoxLayout()
-        btn_data = QToolButton()
-        btn_data.setText("…")
-        btn_data.setToolTip("数据与设置")
+    def _build_data_menu(self):
         menu = QMenu(self)
-        menu.addAction("导入 Timo 导出包（ZIP）…", self.import_zip)
-        menu.addAction("导入文件夹…", self.import_folder)
-        menu.addSeparator()
-        menu.addAction("导出为 Timo ZIP…", self.export_zip)
-        menu.addAction("导出为 Markdown 文件夹…", self.export_md_tree)
+        incoming = menu.addMenu("导入")
+        incoming.addAction("Timo 导出包（ZIP）…", self.import_zip)
+        incoming.addAction("Timo 导出文件夹…", self.import_folder)
+        outgoing = menu.addMenu("导出")
+        outgoing.addAction("Timo ZIP…", self.export_zip)
+        outgoing.addAction("Markdown 文件夹…", self.export_md_tree)
         menu.addAction("打开数据目录", self.open_data_dir)
-        menu.addAction("偏好设置…", self.open_settings)
         menu.addAction("备份与恢复…", self.backup_dialog)
-        menu.addAction("已删除的主题…", self.trash_topics_dialog)
         menu.addSeparator()
-        menu.addAction("清空回收站…", self.empty_trash)
-        menu.addAction("清理未使用的图片…", self.clean_attachments)
-        menu.addAction("检查数据完整性…", self.audit_data)
-        menu.addAction("查找重复笔记…", self.dedupe_dialog)
-        menu.addSeparator()
+        maintenance = menu.addMenu("整理数据")
+        maintenance.addAction("已删除的主题…", self.trash_topics_dialog)
+        maintenance.addAction("清空回收站…", self.empty_trash)
+        maintenance.addAction("清理未使用的图片…", self.clean_attachments)
+        maintenance.addAction("检查数据完整性…", self.audit_data)
+        maintenance.addAction("查找重复笔记…", self.dedupe_dialog)
         appearance = menu.addMenu("外观")
-        grp = QActionGroup(self)
-        grp.setExclusive(True)
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
         current = self.settings.get("theme_mode", "light")
-        for key, label in (("light", "浅色"), ("dark", "深色"), ("system", "跟随系统")):
-            act = appearance.addAction(label)
-            act.setCheckable(True)
-            act.setChecked(current == key)
-            act.triggered.connect(lambda _=False, k=key: self.set_theme(k))
-            grp.addAction(act)
-        self._theme_group = grp
+        for key, caption in (("light", "浅色"), ("dark", "深色"), ("system", "跟随系统")):
+            action = appearance.addAction(caption)
+            action.setCheckable(True)
+            action.setChecked(current == key)
+            action.setData(key)
+            action.triggered.connect(lambda _=False, k=key: self.set_theme(k))
+            self._theme_group.addAction(action)
+        menu.addAction("偏好设置…", self.open_settings)
         menu.addSeparator()
         menu.addAction("关于 HanLin-Notes", self.show_about)
-        btn_data.setMenu(menu)
-        btn_data.setPopupMode(QToolButton.InstantPopup)
-        bottom.addWidget(btn_data)
-        bottom.addStretch(1)
-        self.total_label = QLabel("")
-        self.total_label.setObjectName("TotalLabel")
-        bottom.addWidget(self.total_label)
-        sb.addLayout(bottom)
-        h.addWidget(sidebar)
+        return menu
 
-        # ===== 列表 =====
-        listpane = QFrame(objectName="ListPane")
-        listpane.setFixedWidth(334)
-        lp = QVBoxLayout(listpane)
-        lp.setContentsMargins(18, 18, 14, 14)
-        lp.setSpacing(9)
+    def _build_library_page(self):
+        page = QWidget(objectName="LibraryPage")
+        page.setAttribute(Qt.WA_StyledBackground, True)
+        panel = QVBoxLayout(page)
+        panel.setContentsMargins(30, 31, 25, 14)
+        panel.setSpacing(16)
+        header = QFrame(objectName="CollectionHeader")
+        bar = QHBoxLayout(header)
+        bar.setContentsMargins(5, 0, 4, 16)
+        bar.setSpacing(8)
+        title = QWidget()
+        title_area = QVBoxLayout(title)
+        title_area.setContentsMargins(0, 0, 0, 0)
+        title_area.setSpacing(3)
+        self.header_label = QLabel("全部笔记", objectName="CollectionTitle")
+        self.header_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.header_label.setTextFormat(Qt.PlainText)
+        title_area.addWidget(self.header_label)
+        self.count_label = QLabel(objectName="CollectionCount")
+        title_area.addWidget(self.count_label)
+        bar.addWidget(title, 1)
 
-        head = QHBoxLayout()
-        self.header_label = QLabel("全部笔记", objectName="ListHeader")
-        head.addWidget(self.header_label)
-        head.addSpacing(8)
-        self.count_label = QLabel("", objectName="CountLabel")
-        head.addWidget(self.count_label, alignment=Qt.AlignBottom)
-        head.addStretch(1)
-        self.btn_sort = QToolButton(objectName="SortBtn")
-        self.btn_sort.setText("⇅")
+        self.batch_button = QToolButton(objectName="CollectionControl")
+        self.batch_button.setToolTip("批量移动、归档、置顶或删除")
+        self.batch_button.clicked.connect(self._show_batch_actions)
+        self.batch_button.hide()
+        bar.addWidget(self.batch_button, alignment=Qt.AlignBottom)
+        self.selection_button = QToolButton(objectName="CollectionControl")
+        self.selection_button.setText("选择")
+        self.selection_button.setCheckable(True)
+        self.selection_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.selection_button.setToolTip("多选笔记后批量整理，也可用 Ctrl 或 Shift 点选")
+        self.selection_button.toggled.connect(self._toggle_selection_mode)
+        bar.addWidget(self.selection_button, alignment=Qt.AlignBottom)
+
+        self.btn_sort = QToolButton(objectName="CollectionControl")
+        self.btn_sort.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.btn_sort.setPopupMode(QToolButton.InstantPopup)
-        self.btn_sort.setFixedSize(26, 26)
-        self.btn_sort.setCursor(Qt.PointingHandCursor)
         self.sort_menu = QMenu(self)
-        for key, label in (("updated", "最近更新"), ("created", "最近创建"), ("title", "标题")):
-            act = self.sort_menu.addAction(label)
-            act.setCheckable(True)
-            act.setData(key)
-            act.triggered.connect(lambda _=False, k=key: self.set_sort(k))
+        for key, caption in (("updated", "最近更新"), ("created", "最近创建"), ("title", "标题")):
+            action = self.sort_menu.addAction(caption)
+            action.setCheckable(True)
+            action.setData(key)
+            action.triggered.connect(lambda _=False, k=key: self.set_sort(k))
         self.btn_sort.setMenu(self.sort_menu)
-        head.addWidget(self.btn_sort, alignment=Qt.AlignVCenter)
-        newslot = QHBoxLayout()
-        newslot.setContentsMargins(0, 0, 0, 0)
-        newslot.setSpacing(0)
-        self.btn_new_note = QPushButton("＋ 新建", objectName="NewNoteBtn")
-        self.btn_new_note.setFixedHeight(32)
-        self.btn_new_note.setToolTip("新建便签（Ctrl+N）")
-        self.btn_new_note.clicked.connect(lambda: self.new_note("note"))
-        newslot.addWidget(self.btn_new_note)
-        self.btn_new_type = QToolButton(objectName="NewTypeBtn")
-        self.btn_new_type.setText("▾")
-        self.btn_new_type.setToolTip("新建其他类型")
-        self.btn_new_type.setFixedHeight(32)
-        self.btn_new_type.setFixedWidth(26)
-        self.btn_new_type.setPopupMode(QToolButton.InstantPopup)
-        type_menu = QMenu(self)
-        for t in NOTE_TYPES:
-            type_menu.addAction(TYPE_LABELS[t], lambda _=False, tt=t: self.new_note(tt))
-        self.btn_new_type.setMenu(type_menu)
-        newslot.addWidget(self.btn_new_type)
-        head.addLayout(newslot)
-        lp.addLayout(head)
+        bar.addWidget(self.btn_sort, alignment=Qt.AlignBottom)
+        panel.addWidget(header)
 
-        self.search = QLineEdit(objectName="Search")
-        esc_search = QShortcut(QKeySequence("Escape"), self.search)
-        esc_search.setContext(Qt.WidgetShortcut)
-        esc_search.activated.connect(lambda: self._clear_search(focus=True))
-        self.search.setPlaceholderText("搜索笔记…  Ctrl+F")
-        self._search_action = self.search.addAction(_line_icon("search"), QLineEdit.LeadingPosition)
-        self.search.setTextMargins(4, 0, 0, 0)
-        self.search.setClearButtonEnabled(True)
-        self.search.textChanged.connect(self._on_search_changed)
-        lp.addWidget(self.search)
-
-        self.note_list = NoteList(objectName="NoteList")
+        self.note_list = NoteList(objectName="NoteGrid")
         self.note_list.setVerticalScrollBar(AutoFadeScrollBar(Qt.Vertical, self.note_list))
-        self.note_list.setItemDelegate(NoteCardDelegate(self.lib, self))
+        self.note_list.setItemDelegate(NoteCardDelegate(self.lib, self.note_list))
         self.note_list.setFrameShape(QListWidget.NoFrame)
         self.note_list.setMouseTracking(True)
-        self.note_list.deleteRequested.connect(self._on_notes_delete_key)
+        self.note_list.setViewMode(QListView.IconMode)
+        self.note_list.setMovement(QListView.Static)
+        self.note_list.setResizeMode(QListView.Adjust)
         self.note_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self.note_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.note_list.setUniformItemSizes(True)
         self.note_list.setLayoutMode(QListView.Batched)
         self.note_list.setBatchSize(80)
-        self.note_list.setSpacing(0)
         self.note_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.note_list.setDragEnabled(True)
         self.note_list.setDragDropMode(QListWidget.DragOnly)
         self.note_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.note_list.customContextMenuRequested.connect(self._note_menu)
         self.note_list.currentRowChanged.connect(self._on_note_changed)
-        self.note_list.setUniformItemSizes(True)
-        self.list_empty = QLabel("", objectName="ListEmpty")
+        self.note_list.itemSelectionChanged.connect(self._sync_batch_actions)
+        self.note_list.openRequested.connect(self._open_grid_note)
+        self.note_list.deleteRequested.connect(self._on_notes_delete_key)
+        panel.addWidget(self.note_list, 1)
+
+        self.library_empty = QWidget()
+        empty_layout = QVBoxLayout(self.library_empty)
+        empty_layout.setAlignment(Qt.AlignCenter)
+        empty_layout.setSpacing(14)
+        self.empty_icon = QLabel(objectName="LibraryEmptyIcon")
+        self.empty_icon.setFixedSize(58, 58)
+        self.empty_icon.setAlignment(Qt.AlignCenter)
+        empty_layout.addWidget(self.empty_icon, alignment=Qt.AlignCenter)
+        self.list_empty = QLabel(objectName="ListEmpty")
         self.list_empty.setAlignment(Qt.AlignCenter)
         self.list_empty.setWordWrap(True)
-        self.list_empty.hide()
-        lp.addWidget(self.list_empty, 1)
-        lp.addWidget(self.note_list, 1)
-        h.addWidget(listpane)
+        self.list_empty.setTextFormat(Qt.PlainText)
+        empty_layout.addWidget(self.list_empty)
+        self.empty_create = QPushButton("新建笔记", objectName="Primary")
+        self.empty_create.clicked.connect(lambda: self.new_note())
+        empty_layout.addWidget(self.empty_create, alignment=Qt.AlignCenter)
+        self.library_empty.hide()
+        panel.addWidget(self.library_empty, 1)
+        return page
 
-        # ===== 编辑器 =====
+    def _build_document_page(self):
+        page = QWidget(objectName="DocumentPage")
+        page.setAttribute(Qt.WA_StyledBackground, True)
+        column = QVBoxLayout(page)
+        column.setContentsMargins(30, 15, 29, 18)
+        column.setSpacing(11)
+        crumbs = QHBoxLayout()
+        crumbs.setContentsMargins(0, 0, 0, 0)
+        crumbs.setSpacing(12)
+        self.back_button = QToolButton(objectName="BackToLibrary")
+        self.back_button.setText("笔记库")
+        self.back_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.back_button.setToolTip("返回笔记库（Alt+←）")
+        self.back_button.clicked.connect(lambda: self._show_library(focus=True))
+        crumbs.addWidget(self.back_button)
+        self.document_topic = QLabel(objectName="DocumentTopic")
+        self.document_topic.setTextFormat(Qt.PlainText)
+        self.document_topic.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        crumbs.addWidget(self.document_topic, 1)
+        column.addLayout(crumbs)
+
         self.editor = NoteEditor(self.lib)
+        self.editor.find_shortcut.setEnabled(False)
         self.editor.contentChanged.connect(self._on_content_changed)
         self.editor.metaChanged.connect(self._on_meta_changed)
         self.editor.requestNewNote.connect(self.new_note)
-        h.addWidget(self.editor, 1)
+        self.editor.actionsRequested.connect(self._show_document_actions)
+        column.addWidget(self.editor, 1)
+        return page
 
-        # 三块面板的投影由 _Body.paintEvent 手绘。
-        body.panes = [sidebar, listpane, self.editor]
+    def _sync_chrome_icons(self):
+        self._search_action.setIcon(glyph("search"))
+        self.btn_new_note.setIcon(glyph("add", "on_accent"))
+        self.btn_new_type.setIcon(glyph("chevron", "on_accent"))
+        self.btn_add_topic.setIcon(glyph("add"))
+        self.btn_topic_sort.setIcon(glyph("sort"))
+        self.btn_sort.setIcon(glyph("sort"))
+        self.selection_button.setIcon(glyph("select"))
+        self.back_button.setIcon(glyph("back"))
+        self.btn_data.setIcon(glyph("settings"))
+        for action in self.type_menu.actions():
+            action.setIcon(glyph(action.data()))
+        for row in range(self.nav.count()):
+            item = self.nav.item(row)
+            item.setIcon(glyph(item.data(Qt.UserRole)))
+        self._sync_empty_icon()
 
-        self.statusBar().hide()
+    def _sync_empty_icon(self):
+        icon = "search" if self._search_buf else self.view[0]
+        self.empty_icon.setPixmap(glyph(icon if icon != "topic" else "folder", "accent_text").pixmap(26))
 
-        # 无边框窗口的轮廓
-        self._edge = FrameEdge(central)
-        self._edge.setGeometry(central.rect())
-        self._edge.raise_()
+    def _open_grid_note(self, item):
+        note = self.lib.notes.get(item.data(Qt.UserRole)) if item is not None else None
+        if note is None:
+            return
+        self.save_now()
+        if self.editor.note is not note:
+            self.editor.set_note(note, focus=False)
+        self._open_document()
+
+    def _open_document(self, *, animate=True, focus=True):
+        note = self.editor.note
+        if note is None:
+            return
+        self._sync_document_topic(note)
+        self.workspace.open_page(self.document_page, 1, animate=animate)
+        if focus:
+            self.editor.focus_document()
+
+    def _sync_document_topic(self, note):
+        topic = self.lib.topics.get(note.topic_id)
+        self.document_topic.setText("回收站" if note.state == "trash" else topic.name if topic else "")
+
+    def _show_library(self, *, focus=False):
+        if self.workspace.currentWidget() is self.document_page:
+            self.save_now()
+            self.workspace.open_page(self.library_page, -1)
+        if focus:
+            self.note_list.setFocus()
+
+    def _open_search_result(self):
+        if not self.search.text().strip():
+            return
+        if self._search_timer.isActive():
+            self._search_timer.stop()
+            self._apply_search()
+        self._open_grid_note(self.note_list.currentItem())
+
+    def _reset_search(self):
+        self._clear_search(focus=True)
+        self._apply_search()
+
+    def _toggle_selection_mode(self, selecting):
+        self.note_list.open_on_click = not selecting
+        self.note_list.setSelectionMode(QListWidget.MultiSelection if selecting else QListWidget.ExtendedSelection)
+        self.selection_button.setText("完成选择" if selecting else "选择")
+        self.note_list.clearSelection()
+        self._sync_batch_actions()
+        self.note_list.setFocus()
+
+    def _sync_batch_actions(self):
+        count = len(self.note_list.selectedItems())
+        self.batch_button.setText(f"{count} 条已选")
+        self.batch_button.setVisible(count > 1 or (self.selection_button.isChecked() and count > 0))
+
+    def _show_batch_actions(self):
+        pos = self.batch_button.mapToGlobal(QPoint(0, self.batch_button.height()))
+        self._bulk_menu_at(pos, self.note_list.selectedItems())
+
+    def _show_document_actions(self):
+        if self.editor.note is None:
+            return
+        button = self.editor.btn_more
+        self._show_note_actions(self.editor.note, button.mapToGlobal(QPoint(0, button.height())))
 
     def _build_shortcuts(self):
         for seq, fn in [
             ("Ctrl+N", self.new_note),
             ("Ctrl+Shift+N", self.new_topic),
-            ("Ctrl+F", lambda: self.search.setFocus()),
+            ("Ctrl+F", self._find_in_context),
+            ("Ctrl+Shift+F", lambda: self.search.setFocus()),
             ("Ctrl+S", self.save_now),
             ("Ctrl+E", self._toggle_preview),
-            ("Ctrl+Shift+E", lambda: self.editor.set_mode("edit")),
+            ("Ctrl+Shift+E", self._show_edit_mode),
+            ("Alt+Left", lambda: self._show_library(focus=True)),
         ]:
             QShortcut(QKeySequence(seq), self, fn)
 
@@ -415,24 +505,21 @@ class MainWindow(QMainWindow):
         topic_id = raw.get("topic") if isinstance(raw, dict) else None
         last_note = self.settings.get("last_note") or None
 
-        if kind == "topic" and topic_id:
-            topic = self.lib.topics.get(topic_id)
-            if topic is not None and topic.state != "trash":
-                self.view = ("topic", topic_id)
-                self.nav.blockSignals(True)
-                self.nav.setCurrentRow(-1)
-                self.nav.blockSignals(False)
-                self.refresh_topics()
-                self._reload_notes(select_id=last_note)
-                return
-
-        kind = kind if kind in ("all", "archived", "trash") else "all"
-        self.view = (kind, None)
-        row = {"all": 0, "archived": 1, "trash": 2}[kind]
+        topic = self.lib.topics.get(topic_id) if isinstance(topic_id, str) else None
+        if kind == "topic" and topic and topic.state != "trash":
+            self.view = ("topic", topic_id)
+            row = -1
+            self.refresh_topics()
+        else:
+            kind = kind if kind in ("all", "archived", "trash") else "all"
+            self.view = (kind, None)
+            row = {"all": 0, "archived": 1, "trash": 2}[kind]
         self.nav.blockSignals(True)
         self.nav.setCurrentRow(row)
         self.nav.blockSignals(False)
         self._reload_notes(select_id=last_note)
+        if self.settings.get("last_document") and self.editor.note is not None:
+            self._open_document(animate=False, focus=False)
 
     def _save_view(self):
         kind, topic_id = self.view
@@ -440,6 +527,7 @@ class MainWindow(QMainWindow):
             self.settings.set("last_view", {"kind": kind, "topic": topic_id or ""})
             note = getattr(self.editor, "note", None)
             self.settings.set("last_note", note.id if note else "")
+            self.settings.set("last_document", self.workspace.currentWidget() is self.document_page)
         except Exception:
             pass
 
@@ -469,19 +557,21 @@ class MainWindow(QMainWindow):
         self.topic_list.blockSignals(False)
         active = sum(1 for n in self.lib.notes.values() if n.state == "active")
         total = len(self.lib.notes)
-        self.total_label.setText(f"{active} / {total} 条")
+        self.total_label.setText(f"{active} 条使用中 · 共 {total} 条")
 
     def select_nav(self, kind: str):
         row = {"all": 0, "archived": 1, "trash": 2}.get(kind, 0)
-        self.nav.setCurrentRow(row)
+        if self.nav.currentRow() == row:
+            self._on_nav_changed(row)
+        else:
+            self.nav.setCurrentRow(row)
 
     def _clear_search(self, focus: bool = False):
         """清掉搜索词（切换视图或按 Esc），免得列表停在上一轮的搜索结果里。"""
         self._search_buf = ""
-        if self.search.text():
-            self.search.blockSignals(True)
-            self.search.clear()
-            self.search.blockSignals(False)
+        self._search_timer.stop()
+        self.editor.set_highlight("")
+        self.search.clear()
         if focus:
             self.note_list.setFocus()
 
@@ -493,6 +583,7 @@ class MainWindow(QMainWindow):
         self.topic_list.setCurrentRow(-1)
         self.topic_list.blockSignals(False)
         self.view = (kind, None)
+        self._show_library()
         self._reload_notes(animate=True)
 
     def _on_topic_changed(self, row: int):
@@ -507,6 +598,7 @@ class MainWindow(QMainWindow):
         self.nav.setCurrentRow(-1)
         self.nav.blockSignals(False)
         self.view = ("topic", topic.id)
+        self._show_library()
         self._reload_notes(animate=True)
 
     def _topic_menu(self, pos):
@@ -523,7 +615,7 @@ class MainWindow(QMainWindow):
         a_delete = menu.addAction("删除主题")
         act = menu.exec_(self.topic_list.mapToGlobal(pos))
         if act is a_new:
-            self.new_note()
+            self.new_note(topic_id=topic.id)
         elif act is a_lock:
             self.toggle_topic_lock(topic)
         elif act is a_rename:
@@ -562,11 +654,17 @@ class MainWindow(QMainWindow):
             self.select_nav("all")
 
     def _topic_sort_menu(self, pos):
+        self._topic_sort_at(self.topic_list.mapToGlobal(pos))
+
+    def _show_topic_sort(self, button):
+        self._topic_sort_at(button.mapToGlobal(QPoint(0, button.height())))
+
+    def _topic_sort_at(self, pos):
         menu = QMenu(self)
         a_name = menu.addAction("主题按名称排序")
         a_count = menu.addAction("主题按笔记数排序")
         a_time = menu.addAction("主题按最近更新排序")
-        act = menu.exec_(self.topic_list.mapToGlobal(pos))
+        act = menu.exec_(pos)
         if act is a_name:
             self.sort_topics("name")
         elif act is a_count:
@@ -635,21 +733,6 @@ class MainWindow(QMainWindow):
         state = "archived" if (t and t.state == "archived") else "active"
         return self.lib.topic_notes(tid, state=state, order=order)
 
-    def _fade_in(self, widget: QWidget, ms: int = 180):
-        """短暂的透明度过渡，用于切换视图、页面时的柔和出现。"""
-        try:
-            eff = QGraphicsOpacityEffect(widget)
-            widget.setGraphicsEffect(eff)
-            anim = QPropertyAnimation(eff, b"opacity", self)
-            anim.setDuration(ms)
-            anim.setStartValue(0.2)
-            anim.setEndValue(1.0)
-            anim.setEasingCurve(QEasingCurve.OutCubic)
-            anim.finished.connect(lambda: widget.setGraphicsEffect(None))
-            anim.start(QAbstractAnimation.DeleteWhenStopped)
-        except RuntimeError:
-            pass
-
     def _reload_notes(self, select_id: str | None = None, animate: bool = False):
         kind, tid = self.view
         title = "全部笔记"
@@ -678,35 +761,43 @@ class MainWindow(QMainWindow):
             # 搜索结果也跟着当前的排序方式走，不然和列表其它时候不一致
             if self.sort_mode != "updated":
                 notes.sort(key=lambda n: n.sort_key(self.sort_mode, self.lib.content(n.id)))
-            self.header_label.setText(f"搜索「{self._search_buf}」")
+            self.header_label.setText("搜索结果")
+        self.header_label.setToolTip(title if not self._search_buf else self._search_buf)
 
         self.note_list.blockSignals(True)
         self.note_list.setUpdatesEnabled(False)
         try:
             self.note_list.clear()
             for n in notes:
-                it = QListWidgetItem()
+                it = QListWidgetItem(n.display_title(self.lib.content(n.id)))
                 it.setData(Qt.UserRole, n.id)
-                it.setSizeHint(QSize(0, 100))
                 self.note_list.addItem(it)
         finally:
             self.note_list.setUpdatesEnabled(True)
             self.note_list.blockSignals(False)
-        self.count_label.setText(str(len(notes)) if notes else "")
+        count = f"{len(notes)} 条笔记"
+        if self._search_buf:
+            query = " ".join(self._search_buf.split())
+            detail = f"「{query[:36]}{'…' if len(query) > 36 else ''}」"
+            count = f"{count}匹配  ·  {detail}"
+        self.count_label.setText(count)
+        self.count_label.setTextFormat(Qt.PlainText)
+        self.library_empty.setVisible(not notes)
+        self.note_list.setVisible(bool(notes))
+        self.selection_button.setEnabled(bool(notes))
         if notes:
-            self.note_list.show()
-            self.list_empty.hide()
+            self.note_list.update_grid()
         else:
-            self.note_list.hide()
             if self._search_buf:
-                self.list_empty.setText(f"没有找到「{self._search_buf}」相关的笔记")
+                self.list_empty.setText("没有找到匹配的笔记")
             elif kind == "trash":
                 self.list_empty.setText("回收站是空的")
             elif kind == "archived":
                 self.list_empty.setText("还没有归档的笔记")
             else:
-                self.list_empty.setText("这里还没有笔记\n点「＋ 新建」开始记录")
-            self.list_empty.show()
+                self.list_empty.setText("这里还没有笔记")
+            self.empty_create.setVisible(kind not in ("trash", "archived") and not self._search_buf)
+            self._sync_empty_icon()
 
         # 保留当前选中
         target = select_id or (self.editor.note.id if self.editor.note else None)
@@ -722,16 +813,23 @@ class MainWindow(QMainWindow):
             self.note_list.blockSignals(False)
             if select_id:
                 self.note_list.scrollToItem(self.note_list.item(found))
-            self.editor.set_note(self.lib.notes.get(target))
+            note = self.lib.notes.get(target)
+            if self.editor.note is not note:
+                self.editor.set_note(note, focus=False)
+            else:
+                self.editor.refresh_note_meta()
+            self._sync_document_topic(note)
         else:
             self.note_list.blockSignals(True)
             self.note_list.setCurrentRow(-1)
             self.note_list.blockSignals(False)
             self.note_list.scrollToTop()
-            self.editor.set_note(None)
+            self._show_library()
+            self.editor.set_note(None, focus=False)
 
         if animate and notes:
-            self._fade_in(self.note_list, 170)
+            self.note_list.reveal_cards()
+        self._sync_batch_actions()
 
     def _check_reminders(self):
         """把到点的提醒弹出来（每条只提醒一次）。"""
@@ -818,7 +916,7 @@ class MainWindow(QMainWindow):
         self._flush_save()
         nid = it.data(Qt.UserRole)
         note = self.lib.notes.get(nid)
-        self.editor.set_note(note)
+        self.editor.set_note(note, focus=False)
 
     def _note_menu(self, pos):
         items = self.note_list.selectedItems()
@@ -832,7 +930,16 @@ class MainWindow(QMainWindow):
         note = self.lib.notes.get(nid)
         if not note:
             return
+        self._show_note_actions(note, self.note_list.viewport().mapToGlobal(pos))
+
+    def _show_note_actions(self, note, pos):
+        self.save_now()
+        nid = note.id
         menu = QMenu(self)
+        on_grid = self.workspace.currentWidget() is self.library_page
+        a_open = menu.addAction("打开笔记") if on_grid else None
+        if on_grid:
+            menu.addSeparator()
         a_pin = menu.addAction("取消置顶" if note.pinned_at else "置顶")
         color_menu = menu.addMenu("颜色标记")
         for name, col in NOTE_COLORS:
@@ -858,7 +965,17 @@ class MainWindow(QMainWindow):
             a_restore = menu.addAction("从回收站恢复")
         else:
             a_del = menu.addAction("删除到回收站")
-        act = menu.exec_(self.note_list.mapToGlobal(pos))
+        act = menu.exec_(pos)
+        if act is None:
+            return
+        if act is a_open:
+            for row in range(self.note_list.count()):
+                item = self.note_list.item(row)
+                if item.data(Qt.UserRole) == nid:
+                    self.note_list.setCurrentRow(row)
+                    self._open_grid_note(item)
+                    break
+            return
         if act is a_pin:
             self.lib.toggle_pin(nid)
         elif act is a_arch:
@@ -888,6 +1005,9 @@ class MainWindow(QMainWindow):
 
     def _bulk_menu(self, pos, items):
         """多选时的批量操作菜单。"""
+        self._bulk_menu_at(self.note_list.viewport().mapToGlobal(pos), items)
+
+    def _bulk_menu_at(self, pos, items):
         ids = [it.data(Qt.UserRole) for it in items if it.data(Qt.UserRole) in self.lib.notes]
         n = len(ids)
         if not n:
@@ -906,7 +1026,7 @@ class MainWindow(QMainWindow):
             act.setData(t.id)
         menu.addSeparator()
         a_del = menu.addAction(f"删除 {n} 条")
-        act = menu.exec_(self.note_list.mapToGlobal(pos))
+        act = menu.exec_(pos)
         if act is None:
             return
         if act is a_pin:
@@ -943,20 +1063,24 @@ class MainWindow(QMainWindow):
         self._reload_notes(animate=True)
 
     # ---------------- 编辑保存 ----------------
-    def new_note(self, note_type: str = "note"):
+    def new_note(self, note_type: str = "note", *, topic_id: str | None = None):
+        self.save_now()
         kind, tid = self.view
-        topic_id = tid
-        if kind != "topic" or not topic_id:
-            if not self.lib.topics:
+        topic_id = topic_id or (tid if kind == "topic" else None)
+        if not topic_id:
+            topics = self.lib.sorted_topics()
+            if not topics:
                 self.new_topic()
-                if not self.lib.topics:
+                topics = self.lib.sorted_topics()
+                if not topics:
                     return
             # 全部/归档视图里新建：优先落到上次用过的主题，别每次都塞给第一个
             last = self.settings.get("last_topic_id", "")
             t = self.lib.topics.get(last)
             if not t or t.state == "trash":
-                t = self.lib.sorted_topics()[0]
+                t = topics[0]
             topic_id = t.id
+        self._clear_search()
         note = self.lib.add_note(topic_id, note_type, "", None)
         self.lib.save()
         self.settings.set("last_topic_id", topic_id)
@@ -970,7 +1094,7 @@ class MainWindow(QMainWindow):
                     self.topic_list.blockSignals(False)
                     break
         self._reload_notes(select_id=note.id, animate=True)
-        self.editor._content_widget().setFocus()
+        self._open_document()
 
     def _on_content_changed(self, note_id: str, content: str, title: str):
         self._pending_save = (note_id, content, title)
@@ -1017,24 +1141,50 @@ class MainWindow(QMainWindow):
 
     def _refresh_item(self, note_id: str):
         for i in range(self.note_list.count()):
-            if self.note_list.item(i).data(Qt.UserRole) == note_id:
-                self.note_list.update(self.note_list.indexFromItem(self.note_list.item(i)))
+            item = self.note_list.item(i)
+            if item.data(Qt.UserRole) == note_id:
+                note = self.lib.notes.get(note_id)
+                if note:
+                    item.setText(note.display_title(self.lib.content(note_id)))
+                self.note_list.update(self.note_list.indexFromItem(item))
                 break
 
     def _toggle_preview(self):
+        if not self.editor.note:
+            return
         m = getattr(self.editor, "_mode", "split")
         self.editor.set_mode("preview" if m != "preview" else "split")
+        self._open_document()
+
+    def _show_edit_mode(self):
+        if self.editor.note:
+            self.editor.set_mode("edit")
+            self._open_document()
+
+    def _find_in_context(self):
+        editor = self.editor
+        if self.workspace.currentWidget() is self.document_page and any(
+            widget.hasFocus() for widget in (editor.edit, editor.preview, editor.find_edit)
+        ):
+            editor.show_find()
+        else:
+            self.search.setFocus()
 
     def _on_search_changed(self, text: str):
-        self._search_buf = text.strip()
+        term = text.strip()
+        if term == self._search_buf:
+            return
+        self._search_buf = term
+        self._show_library()
         self._search_timer.start()
 
     def _apply_search(self):
+        self._search_timer.stop()
         term = self.search.text().strip()
         self._search_buf = term
         self.editor.set_highlight(term if term else "")
         self._reload_notes(animate=True)
-        # 搜索后直接落在第一条命中上，右侧就能看到高亮
+        # 搜索后预选第一条。回车直接打开并显示正文中的匹配。
         if term and self.note_list.count():
             self.note_list.setCurrentRow(0)
 
@@ -1128,9 +1278,11 @@ class MainWindow(QMainWindow):
         self.lib.save()
         self.refresh_topics()
         self._reload_notes(select_id=note.id, animate=True)
+        self._open_document()
         self._toast(f"已导入「{note.display_title(self.lib.content(note.id))}」")
 
     def _do_import(self, path: str):
+        self.save_now()
         mode = "replace"
         if self.lib.notes:
             from .dialogs import ImportModeDialog
@@ -1248,6 +1400,7 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         from .dialogs import SettingsDialog
 
+        previous_font = self.settings.get("font_family", "Microsoft YaHei")
         dlg = SettingsDialog(
             self,
             self.settings,
@@ -1264,7 +1417,7 @@ class MainWindow(QMainWindow):
         if want_sort != getattr(self, "sort_mode", "updated"):
             self.set_sort(want_sort)
         want_font = dlg.cmb_font.currentData()
-        if want_font != self.settings.get("font_family", "Microsoft YaHei"):
+        if want_font != previous_font:
             self.apply_font(want_font)
 
     def apply_font(self, family: str) -> None:
@@ -1392,8 +1545,7 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.lib.root)))
 
     def _toast(self, text: str, ms: int = 1600):
-        """不改变布局的小提示：贴着鼠标弹一个 tooltip。"""
-        QToolTip.showText(QCursor.pos(), text, self)
+        self.notice.present(text, ms)
 
     def _export_markdown(self, note: Note):
         content = self.lib.content(note.id)
@@ -1488,19 +1640,19 @@ class MainWindow(QMainWindow):
         labels = {"updated": "最近更新", "created": "最近创建", "title": "标题"}
         for act in self.sort_menu.actions():
             act.setChecked(act.data() == self.sort_mode)
-        self.btn_sort.setToolTip(f"排序：{labels.get(self.sort_mode, '最近更新')}")
+        label = labels.get(self.sort_mode, "最近更新")
+        self.btn_sort.setText(label)
+        self.btn_sort.setToolTip(f"排序：{label}")
 
     def set_theme(self, mode: str) -> None:
         """切换浅色 / 深色 / 跟随系统，立即生效并记住选择。"""
+        self.workspace.clear_transition()
         apply_theme(QApplication.instance(), resolve_theme(mode))
         self.settings.set("theme_mode", mode)
         if self._theme_group:
             for act in self._theme_group.actions():
-                act.setChecked(act.text() == {"light": "浅色", "dark": "深色", "system": "跟随系统"}[mode])
-        self._search_action.setIcon(_line_icon("search"))
-        for row in range(self.nav.count()):
-            item = self.nav.item(row)
-            item.setIcon(_line_icon(item.data(Qt.UserRole)))
+                act.setChecked(act.data() == mode)
+        self._sync_chrome_icons()
         self.note_list.viewport().update()
         self.topic_list.viewport().update()
         self._edge.update()
@@ -1604,31 +1756,19 @@ class MainWindow(QMainWindow):
         if edge is not None:
             edge.setGeometry(self.centralWidget().rect())
             edge.raise_()
+        if hasattr(self, "notice"):
+            self.notice.reposition()
 
     def showEvent(self, e):  # noqa: N802
         super().showEvent(e)
         self._apply_mask()
-        if hasattr(self, "title_bar"):
-            self.title_bar.sync_max_button()
-        if not getattr(self, "_entered", False):
-            self._entered = True
-            self._play_enter_animation()
-
-    def _play_enter_animation(self):
-        """第一次出现时整体淡化进入，别太慢。"""
-        central = self.centralWidget()
-        if central is None:
-            return
-        eff = QGraphicsOpacityEffect(central)
-        central.setGraphicsEffect(eff)
-        anim = QPropertyAnimation(eff, b"opacity", self)
-        anim.setDuration(240)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.finished.connect(lambda: central.setGraphicsEffect(None))
-        anim.start(QAbstractAnimation.DeleteWhenStopped)
-        self._enter_anim = anim
+        self.title_bar.sync_max_button()
+        if not getattr(self, "_focused_initial_page", False):
+            self._focused_initial_page = True
+            if self.workspace.currentWidget() is self.document_page:
+                self.editor.focus_document()
+            else:
+                (self.note_list if self.note_list.count() else self.nav).setFocus()
 
     def changeEvent(self, e):  # noqa: N802
         if e.type() == QEvent.WindowStateChange:
@@ -1679,10 +1819,6 @@ class MainWindow(QMainWindow):
                 if hit:
                     return True, hit
         return super().nativeEvent(eventType, message)
-
-
-class _UnusedNavDelegate:
-    """占位，保留旧结构引用。"""
 
 
 def _stamp() -> str:

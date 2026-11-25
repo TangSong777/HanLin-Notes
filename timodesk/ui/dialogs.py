@@ -6,6 +6,7 @@ from pathlib import Path
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon, QTextCharFormat
 from PyQt5.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QTreeWidget,
@@ -20,6 +21,7 @@ from PyQt5.QtWidgets import (
 )
 
 from .title_bar import FramelessDialog
+from .visuals import glyph
 
 
 def _button(text: str, name: str = "Plain") -> QPushButton:
@@ -39,10 +41,19 @@ class MessageDialog(FramelessDialog):
         lay.setContentsMargins(28, 22, 28, 20)
         lay.setSpacing(18)
 
+        message = QHBoxLayout()
+        message.setSpacing(14)
+        symbol = QLabel(objectName="DialogSymbol")
+        symbol.setFixedSize(38, 38)
+        symbol.setAlignment(Qt.AlignCenter)
+        symbol.setPixmap(glyph("attention" if danger else "select", "danger" if danger else "accent_text").pixmap(20))
+        message.addWidget(symbol, alignment=Qt.AlignTop)
         lab = QLabel(text)
         lab.setWordWrap(True)
+        lab.setTextFormat(Qt.PlainText)
         lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        lay.addWidget(lab, 0, Qt.AlignTop)
+        message.addWidget(lab, 1, Qt.AlignVCenter)
+        lay.addLayout(message)
 
         row = QHBoxLayout()
         row.setSpacing(10)
@@ -77,7 +88,11 @@ class ProgressDialog(FramelessDialog):
 
         self.label = QLabel(text)
         self.label.setWordWrap(True)
-        lay.addWidget(self.label)
+        header = QHBoxLayout()
+        header.addWidget(self.label, 1)
+        self.progress_count = QLabel(objectName="FieldLabel")
+        header.addWidget(self.progress_count)
+        lay.addLayout(header)
 
         self.bar = QProgressBar()
         self.bar.setTextVisible(False)
@@ -106,6 +121,7 @@ class ProgressDialog(FramelessDialog):
     def set_progress(self, done: int, total: int, text: str | None = None):
         self.bar.setMaximum(max(1, total))
         self.bar.setValue(done)
+        self.progress_count.setText(f"{done} / {total}" if total else "")
         if text:
             self.label.setText(text)
 
@@ -283,7 +299,7 @@ class BackupDialog(FramelessDialog):
 
         self.lib = lib
         self.restored = False
-        self.setFixedSize(520, 460)
+        self.setFixedSize(574, 456)
 
         lay = QVBoxLayout(self.body)
         lay.setContentsMargins(28, 22, 28, 22)
@@ -296,6 +312,14 @@ class BackupDialog(FramelessDialog):
         tip.setWordWrap(True)
         lay.addWidget(tip)
 
+        header = QHBoxLayout()
+        header.addWidget(QLabel("备份记录", objectName="FieldHeading"))
+        header.addStretch(1)
+        b_now = _button("立即备份", "Plain")
+        b_now.clicked.connect(self._make_now)
+        header.addWidget(b_now)
+        lay.addLayout(header)
+
         self.list = QListWidget()
         self.list.setObjectName("BackupList")
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -303,27 +327,16 @@ class BackupDialog(FramelessDialog):
 
         row = QHBoxLayout()
         row.setSpacing(8)
-        fixed = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        b_now = QPushButton("立即备份")
-        b_now.setSizePolicy(fixed)
-        b_now.setObjectName("Plain")
-        b_now.clicked.connect(self._make_now)
-        row.addWidget(b_now)
-        self.b_restore = QPushButton("恢复所选")
-        self.b_restore.setSizePolicy(fixed)
-        self.b_restore.setObjectName("Primary")
-        self.b_restore.clicked.connect(self._restore)
-        row.addWidget(self.b_restore)
-        row.addStretch(1)
-        b_open = QPushButton("打开文件夹")
-        b_open.setSizePolicy(fixed)
-        b_open.setMaximumWidth(92)
-        b_open.setObjectName("Link")
+        b_open = _button("打开备份目录", "Link")
         b_open.clicked.connect(self._open_dir)
         row.addWidget(b_open)
+        row.addStretch(1)
         b_close = _button("关闭", "Plain")
         b_close.clicked.connect(self.accept)
         row.addWidget(b_close)
+        self.b_restore = _button("恢复所选", "Primary")
+        self.b_restore.clicked.connect(self._restore)
+        row.addWidget(self.b_restore)
         lay.addLayout(row)
 
         self.status = QLabel(objectName="FieldLabel")
@@ -398,27 +411,40 @@ class SettingsDialog(FramelessDialog):
         self.settings = settings
         self.theme_changed = False
         self._orig_theme = theme_mode or "light"
-        self.setFixedSize(470, 330)
+        self.setFixedSize(600, 362)
 
         lay = QVBoxLayout(self.body)
-        lay.setContentsMargins(30, 20, 30, 20)
-        lay.setSpacing(14)
+        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setSpacing(12)
+        sections = QHBoxLayout()
+        sections.setSpacing(12)
+        lay.addLayout(sections, 1)
 
-        def row(label: str, widget) -> None:
-            line = QHBoxLayout()
-            line.setSpacing(12)
-            lab = QLabel(label, objectName="FieldLabel")
-            lab.setFixedWidth(112)
-            line.addWidget(lab)
-            line.addWidget(widget, 1)
-            lay.addLayout(line)
+        def section(title: str):
+            card = QFrame(objectName="SettingsGroup")
+            fields = QVBoxLayout(card)
+            fields.setContentsMargins(15, 13, 15, 14)
+            fields.setSpacing(7)
+            fields.addWidget(QLabel(title, objectName="FieldHeading"))
+            fields.addSpacing(4)
+            sections.addWidget(card, 1)
+            return fields
+
+        def field(layout, label: str, widget) -> None:
+            caption = QLabel(label, objectName="FieldLabel")
+            caption.setBuddy(widget)
+            layout.addWidget(caption)
+            layout.addWidget(widget)
+
+        appearance = section("外观")
+        organization = section("笔记")
 
         self.cmb_theme = QComboBox()
         for key, text in (("light", "浅色"), ("dark", "深色"), ("system", "跟随系统")):
             self.cmb_theme.addItem(text, key)
         idx = max(0, self.cmb_theme.findData(theme_mode or "light"))
         self.cmb_theme.setCurrentIndex(idx)
-        row("外观", self.cmb_theme)
+        field(appearance, "颜色主题", self.cmb_theme)
 
         from .theme import available_text_fonts
 
@@ -428,34 +454,34 @@ class SettingsDialog(FramelessDialog):
         self.cmb_font.setCurrentIndex(
             max(0, self.cmb_font.findData(settings.get("font_family", "Microsoft YaHei")))
         )
-        row("正文字体", self.cmb_font)
+        field(appearance, "正文字体", self.cmb_font)
+        appearance.addStretch(1)
 
         self.spin_trash = QSpinBox()
         self.spin_trash.setRange(0, 3650)
         self.spin_trash.setValue(int(settings.get("trash_days", 0) or 0))
         self.spin_trash.setSuffix(" 天")
         self.spin_trash.setSpecialValueText("不自动清理")
-        row("回收站清理", self.spin_trash)
-
         self.cmb_sort = QComboBox()
         for key, text in (("updated", "最近更新"), ("created", "最近创建"), ("title", "标题")):
             self.cmb_sort.addItem(text, key)
         self.cmb_sort.setCurrentIndex(max(0, self.cmb_sort.findData(sort_mode or "updated")))
-        row("列表排序", self.cmb_sort)
+        field(organization, "默认排序", self.cmb_sort)
+        field(organization, "回收站清理周期", self.spin_trash)
 
         hint = QLabel(
-            "回收站里超过设定天数的笔记会在启动时自动彻底删除；设为「不自动清理」就只在你点「清空回收站」时才删。",
+            "设定天数后，程序启动时会永久删除超过该期限的回收站笔记。",
             objectName="FieldLabel",
         )
         hint.setWordWrap(True)
-        lay.addWidget(hint)
-        lay.addStretch(1)
+        organization.addWidget(hint)
+        organization.addStretch(1)
 
         btns = QHBoxLayout()
         btns.addStretch(1)
-        cancel = QPushButton("关闭", objectName="Plain")
-        cancel.clicked.connect(self.reject)
-        btns.addWidget(cancel)
+        done = QPushButton("完成", objectName="Primary")
+        done.clicked.connect(self.accept)
+        btns.addWidget(done)
         lay.addLayout(btns)
 
         self.cmb_theme.currentIndexChanged.connect(self._on_theme)
@@ -480,36 +506,38 @@ class ImportModeDialog(FramelessDialog):
         from PyQt5.QtWidgets import QHBoxLayout
 
         self.mode: str | None = None
-        self.setFixedSize(460, 232)
+        self.setFixedSize(604, 320)
 
         lay = QVBoxLayout(self.body)
-        lay.setContentsMargins(30, 22, 30, 22)
-        lay.setSpacing(10)
+        lay.setContentsMargins(24, 20, 24, 18)
+        lay.setSpacing(14)
 
-        t = QLabel("当前库里有 %d 条笔记" % note_count, objectName="ImportSummary")
-        lay.addWidget(t)
-
-        d1 = QLabel("合并导入：保留现在的笔记，只把包里没有的新笔记加进来。", objectName="FieldLabel")
-        d1.setWordWrap(True)
-        lay.addWidget(d1)
-
-        d2 = QLabel("替换导入：清空当前库，用包里的内容整体替换（动手前会先备份一份）。", objectName="FieldLabel")
-        d2.setWordWrap(True)
-        lay.addWidget(d2)
-
-        lay.addStretch(1)
+        lay.addWidget(QLabel(f"当前库有 {note_count} 条笔记", objectName="ImportSummary"))
+        options = QHBoxLayout()
+        options.setSpacing(12)
+        for mode, title, description, style in (
+            ("merge", "合并导入", "保留当前笔记，加入导出包中的新内容。", "Primary"),
+            ("replace", "替换导入", "备份当前库后，用导出包中的内容整体替换。", "Danger"),
+        ):
+            card = QFrame(objectName="SettingsGroup")
+            content = QVBoxLayout(card)
+            content.setContentsMargins(15, 13, 15, 13)
+            content.setSpacing(8)
+            content.addWidget(QLabel(title, objectName="FieldHeading"))
+            tip = QLabel(description, objectName="FieldLabel")
+            tip.setWordWrap(True)
+            content.addWidget(tip)
+            content.addStretch(1)
+            action = _button("合并" if mode == "merge" else "替换", style)
+            action.clicked.connect(lambda _=False, m=mode: self._pick(m))
+            content.addWidget(action, alignment=Qt.AlignRight)
+            options.addWidget(card, 1)
+        lay.addLayout(options, 1)
         row = QHBoxLayout()
-        row.setSpacing(8)
-        b_cancel = _button("取消", "Link")
-        b_cancel.clicked.connect(self.reject)
-        row.addWidget(b_cancel)
         row.addStretch(1)
-        b_replace = _button("替换导入", "Plain")
-        b_replace.clicked.connect(lambda: self._pick("replace"))
-        row.addWidget(b_replace)
-        b_merge = _button("合并导入", "Primary")
-        b_merge.clicked.connect(lambda: self._pick("merge"))
-        row.addWidget(b_merge)
+        cancel = _button("取消", "Link")
+        cancel.clicked.connect(self.reject)
+        row.addWidget(cancel)
         lay.addLayout(row)
 
     def _pick(self, mode: str):
@@ -525,7 +553,8 @@ class AboutDialog(FramelessDialog):
         ("Ctrl+Shift+N", "新建主题"),
         ("Ctrl+F", "搜索全部笔记（光标在正文里则在本篇内查找）"),
         ("Ctrl+S", "立即保存"),
-        ("Ctrl+E", "编辑 / 分屏 / 预览切换"),
+        ("Ctrl+E", "在分屏和阅读间切换"),
+        ("Alt+←", "从文档返回笔记库"),
         ("Ctrl+B / I / K", "粗体、斜体、插入链接"),
         ("Ctrl+Shift+T", "待办清单"),
         ("Esc", "关闭查找条"),

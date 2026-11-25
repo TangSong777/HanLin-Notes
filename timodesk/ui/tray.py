@@ -78,6 +78,8 @@ class TrayIcon(QSystemTrayIcon):
             w._quitting = True
             try:
                 w.save_now()
+                w._save_geometry()
+                w._save_view()
                 w.lib.save()
             except Exception:  # noqa: BLE001
                 pass

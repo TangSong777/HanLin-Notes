@@ -22,7 +22,7 @@ from .settings import Settings
 from .store import Library
 from .ui.main_window import MainWindow
 from .ui.theme import apply_theme
-from .ui.title_bar import FramelessDialog, app_icon
+from .ui.title_bar import BrandPanel, FramelessDialog, app_icon
 from .ui.dialogs import ProgressDialog, error, info
 from .ui.tray import TrayIcon
 
@@ -121,39 +121,39 @@ class WelcomeDialog(FramelessDialog):
         self.choice = "cancel"
         self.path: str | None = None
         self.setWindowTitle("欢迎使用 HanLin-Notes")
-        self.setFixedSize(560, 462)
-        lay = QVBoxLayout(self.body)
-        lay.setContentsMargins(40, 28, 40, 30)
+        self.setFixedSize(660, 398)
+        split = QHBoxLayout(self.body)
+        split.setContentsMargins(1, 0, 1, 1)
+        split.setSpacing(0)
+        split.addWidget(BrandPanel())
+        lay = QVBoxLayout()
+        lay.setContentsMargins(30, 24, 30, 23)
         lay.setSpacing(10)
-        title = QLabel("HanLin-Notes", objectName="WelcomeTitle")
-        lay.addWidget(title)
-        sub = QLabel("本地笔记 · Windows 桌面版", objectName="WelcomeSub")
-        lay.addWidget(sub)
-        lay.addSpacing(14)
+        split.addLayout(lay, 1)
+        lay.addWidget(QLabel("打开笔记库", objectName="WelcomeTitle"))
         desc = QLabel(
-            "数据完全保存在这台电脑上，不需要账号，也不会联网。\n"
-            "如果你用过手机上的 Timo，可以直接导入它的「可读数据导出」ZIP，\n"
-            "主题、笔记、图片和账号都会原样搬过来。",
+            "创建一个本地库，或从 Timo 的「可读数据导出」迁入主题、笔记和附件。",
             objectName="WelcomeDesc",
         )
         desc.setWordWrap(True)
         lay.addWidget(desc)
         lay.addStretch(1)
 
-        btn_import = QPushButton("导入 Timo 导出包（.zip）", objectName="WelcomePrimary")
-        btn_import.clicked.connect(self._pick_zip)
-        lay.addWidget(btn_import)
+        btn_new = QPushButton("从空白开始", objectName="WelcomePrimary")
+        btn_new.clicked.connect(self._new_empty)
+        lay.addWidget(btn_new)
 
         row = QHBoxLayout()
-        btn_new = QPushButton("从空白开始", objectName="WelcomePlain")
-        btn_new.clicked.connect(self._new_empty)
-        row.addWidget(btn_new)
-        btn_folder = QPushButton("导入解压后的文件夹", objectName="WelcomePlain")
+        btn_import = QPushButton("导入 Timo ZIP", objectName="WelcomePlain")
+        btn_import.clicked.connect(self._pick_zip)
+        row.addWidget(btn_import, 1)
+        btn_folder = QPushButton("导入解压文件夹", objectName="WelcomePlain")
         btn_folder.clicked.connect(self._pick_folder)
-        row.addWidget(btn_folder)
+        row.addWidget(btn_folder, 1)
         lay.addLayout(row)
 
         quit_row = QHBoxLayout()
+        quit_row.addWidget(QLabel("数据保存在此电脑", objectName="WelcomeSub"))
         quit_row.addStretch(1)
         b = QPushButton("退出", objectName="Link")
         b.setFlat(True)
