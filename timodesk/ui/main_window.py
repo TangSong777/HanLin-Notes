@@ -679,13 +679,24 @@ class MainWindow(QMainWindow):
         topics = [t for t in self.lib.topics.values() if t.state != "trash"]
         if len(topics) < 2:
             return
+        from functools import cmp_to_key
+
+        from ..store import compare_zh
+
         if by == "name":
-            topics.sort(key=lambda t: (t.name.lower(), t.created_at))
+            # 中文主题名按拼音排，不然「阿/白/陈」会变成码位乱序
+            topics.sort(
+                key=cmp_to_key(
+                    lambda a, b: compare_zh(a.name, b.name)
+                    or ((a.created_at > b.created_at) - (a.created_at < b.created_at))
+                )
+            )
             label = "名称"
         elif by == "count":
             counts = self.lib.note_counts()
             arch = self.lib.note_counts("archived")
-            topics.sort(key=lambda t: (-(counts if t.state != "archived" else arch).get(t.id, 0), t.name.lower()))
+            n_of = lambda t: (arch if t.state == "archived" else counts).get(t.id, 0)  # noqa: E731
+            topics.sort(key=cmp_to_key(lambda a, b: (n_of(b) - n_of(a)) or compare_zh(a.name, b.name)))
             label = "笔记数"
         else:
             topics.sort(key=lambda t: (t.updated_at or t.created_at or ""), reverse=True)
