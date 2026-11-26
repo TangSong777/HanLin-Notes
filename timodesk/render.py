@@ -60,7 +60,7 @@ def _abs_images(html_text: str, root: Path) -> str:
 
 def _css(colors: dict[str, str]) -> str:
     return f"""
-body {{ color:{colors['ink']}; font-family:"Microsoft YaHei","Segoe UI",sans-serif; font-size:15px;
+body {{ color:{colors['ink']}; font-family:{colors['font_text']}; font-size:15px;
        line-height:1.85; margin:0; }}
 h1 {{ font-size:24px; font-weight:600; margin:22px 0 10px; }}
 h2 {{ font-size:19px; font-weight:600; margin:18px 0 8px; }}

@@ -1,4 +1,5 @@
 """多选批量操作与右键菜单健壮性。"""
+import shutil
 import sys
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from timodesk.ui.main_window import MainWindow
 
 app = QApplication(sys.argv)
 root = Path("worklib_bulk")
+# 每次都从干净的库开始，否则上一轮把笔记移走/归档后 ids 会是空的
+shutil.rmtree(root, ignore_errors=True)
 lib = Library(root).load()
 if not lib.topics:
     a = lib.add_topic("批量甲")

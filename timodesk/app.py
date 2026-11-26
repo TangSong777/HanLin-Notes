@@ -245,9 +245,11 @@ def run():
     root = data_dir()
     _install_excepthook(root)
     settings = Settings(root)
-    apply_theme(app, resolve_theme_mode(settings.get("theme_mode", "light")))
+    # 字体要在生成 QSS 之前定下来，否则样式表里写的是旧字体
     from .ui.theme import set_text_font
-    set_text_font(settings.get("font_family", "Microsoft YaHei"))
+
+    set_text_font(settings.get("font_family", "宋体"))
+    apply_theme(app, resolve_theme_mode(settings.get("theme_mode", "light")))
     app.setWindowIcon(app_icon())
 
     args = list(sys.argv[1:])

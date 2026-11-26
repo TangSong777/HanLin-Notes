@@ -52,14 +52,14 @@ check("默认按更新时间", titles() == ["甲的正文", "乙的正文", "丙
 win.set_sort("created")
 check("按创建时间（新的在前）", titles() == ["乙的正文", "甲的正文", "丙的正文"])
 win.set_sort("title")
-check("按标题", titles() == ["丙的正文", "乙的正文", "甲的正文"])
+check("按标题（拼音序：丙 bing < 甲 jia < 乙 yi）", titles() == ["丙的正文", "甲的正文", "乙的正文"])
 check("菜单勾选跟随", [a.data() for a in win.sort_menu.actions() if a.isChecked()] == ["title"])
 check("设置已保存", win.settings.get("sort_mode") == "title")
 
 # 重开窗口保持
 win2 = MainWindow(lib)
 check("重开保持排序", win2.sort_mode == "title")
-check("重开列表顺序", titles() == ["丙的正文", "乙的正文", "甲的正文"])
+check("重开列表顺序", titles() == ["丙的正文", "甲的正文", "乙的正文"])
 
 # 置顶仍在最前
 lib.toggle_pin(ids["丙"])
@@ -69,7 +69,7 @@ check("置顶优先", titles()[0] == "丙的正文")
 # 主题视图也遵循
 win.view = ("topic", t.id)
 win._reload_notes()
-check("主题内排序一致", titles() == ["丙的正文", "乙的正文", "甲的正文"])
+check("主题内排序一致", titles() == ["丙的正文", "甲的正文", "乙的正文"])
 
 print(f"\n{ok}/{total} PASS")
 sys.exit(0 if ok == total else 1)

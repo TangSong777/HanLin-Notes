@@ -295,7 +295,7 @@ class BackupDialog(FramelessDialog):
 
     def __init__(self, parent, lib):
         super().__init__(parent, "备份与恢复")
-        from PyQt5.QtWidgets import QHBoxLayout, QListWidget, QPushButton
+        from PyQt5.QtWidgets import QHBoxLayout, QListWidget
 
         self.lib = lib
         self.restored = False
@@ -467,7 +467,7 @@ class SettingsDialog(FramelessDialog):
         for label, family in available_text_fonts():
             self.cmb_font.addItem(label, family)
         self.cmb_font.setCurrentIndex(
-            max(0, self.cmb_font.findData(settings.get("font_family", "Microsoft YaHei")))
+            max(0, self.cmb_font.findData(settings.get("font_family", "宋体")))
         )
         field(appearance, "正文字体", self.cmb_font)
         appearance.addStretch(1)

@@ -16,7 +16,7 @@ LIGHT = {
     "card_border_strong": "#dcccc2",
     "header": "#fae8e6",
     "ink": "#3c3c3c",
-    "font_text": "Microsoft YaHei",
+    "font_text": "宋体",
     "ink_soft": "#514541",
     "muted": "#736460",
     "faint": "#8f7c76",
@@ -52,7 +52,7 @@ DARK = {
     "card_border_strong": "#4a3c36",
     "header": "#422e2a",
     "ink": "#f2eae4",
-    "font_text": "Microsoft YaHei",
+    "font_text": "宋体",
     "ink_soft": "#d5c6be",
     "muted": "#b5a49c",
     "faint": "#a08e84",
@@ -200,11 +200,11 @@ FONT_UI = '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "PingFang SC", s
 # 每项是 (显示名, 候选字体族)。Qt 里的名字和 Windows 字体名不一定一致，
 # 例如「宋体」在 QFontDatabase 里就叫「宋体」而不是 SimSun。
 TEXT_FONT_CHOICES = [
+    ("宋体", ("宋体", "SimSun")),          # 默认字体，排第一
     ("微软雅黑", ("微软雅黑", "Microsoft YaHei", "Microsoft YaHei UI")),
-    ("宋体", ("宋体", "SimSun")),
     ("悦黑", ("造字工房悦黑（非商用）常规体", "造字工房悦黑体验版细体", "MF YueHei (Noncommercial)")),
 ]
-FONT_TEXT = '"Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif'
+FONT_TEXT = '"宋体", "Segoe UI", "PingFang SC", sans-serif'
 FONT_MONO = '"Cascadia Code", "Consolas", "JetBrains Mono", monospace'
 
 
@@ -347,7 +347,7 @@ QToolButton#CollectionControl:hover, QToolButton#CollectionControl:focus {{ bord
 QToolButton#CollectionControl:checked {{ background: {C['checked_bg']}; color: {C['accent_text']}; }}
 QToolButton#CollectionControl::menu-indicator, QToolButton#DataButton::menu-indicator,
 QToolButton#NoteAction::menu-indicator {{ image: none; width: 0; }}
-QListWidget#NoteGrid {{ background: {C['canvas']}; border: none; }}
+QListWidget#NoteGrid {{ background: {C['canvas']}; border: none; font-family: {C['font_text']}; }}
 QListWidget#NoteGrid::item {{ background: transparent; border: none; }}
 QLabel#LibraryEmptyIcon {{
     background: {C['checked_bg']}; border: 1px solid {C['card_border']}; border-radius: 12px;
@@ -606,13 +606,14 @@ def available_text_fonts() -> list[tuple[str, str]]:
             if family in installed:
                 out.append((label, family))
                 break
-    return out or [("微软雅黑", "微软雅黑")]
+    return out or [("宋体", "宋体")]
 
 
 def set_text_font(family: str) -> str:
     """切换正文/预览字体，返回实际生效的字体族名。"""
-    valid = {f for _, f in available_text_fonts()}
+    fonts = available_text_fonts()
+    valid = {f for _, f in fonts}
     if family not in valid:
-        family = next(iter(valid), "微软雅黑")
+        family = fonts[0][1] if fonts else "宋体"
     C["font_text"] = family
     return family

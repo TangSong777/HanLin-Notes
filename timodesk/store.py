@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -21,6 +22,45 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 # 笔记类型：与 Timo 导出的 type 名称一致
 INBOX_TOPIC = "（未分类）"
+
+# ---------- 中文排序 ----------
+# Python 的字符串比较按 Unicode 码位来，中文按码位排出来对用户毫无意义
+# （「阿」U+963F 会排在「白」U+767D 后面）。这里借 Windows 自己的排序规则，
+# 中文 Windows 下就是大家熟悉的拼音序；拿不到时退回码位序，保证不会崩。
+_ZH_LCID = 0x0804  # zh-CN
+_compare_string_w = None
+
+
+def _cmp_fn():
+    global _compare_string_w
+    if _compare_string_w is None:
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            fn = ctypes.windll.kernel32.CompareStringW
+            fn.argtypes = [
+                wintypes.DWORD, wintypes.DWORD, wintypes.LPCWSTR, ctypes.c_int,
+                wintypes.LPCWSTR, ctypes.c_int,
+            ]
+            fn.restype = ctypes.c_int
+            _compare_string_w = fn
+        except Exception:  # 非 Windows / 取不到，用码位序兜底
+            _compare_string_w = False
+    return _compare_string_w or None
+
+
+def compare_zh(a: str, b: str) -> int:
+    """中文友好的字符串比较：-1 小 / 0 相同 / 1 大。"""
+    fn = _cmp_fn()
+    if fn is not None:
+        try:
+            r = fn(_ZH_LCID, 0, a, len(a), b, len(b))
+            if r:
+                return r - 2  # 1=小于 2=相等 3=大于
+        except Exception:
+            pass
+    return (a > b) - (a < b)
 
 NOTE_TYPES = ("note", "article", "gallery", "link", "date", "account")
 TYPE_LABELS = {
@@ -65,6 +105,32 @@ def _content_key(text: str) -> str:
     if not body:
         return ""
     return hashlib.sha1(body.encode("utf-8")).hexdigest()
+
+
+def note_fingerprint(note: "Note", content: str) -> str:
+    """判断「是不是同一条笔记」的指纹：类型 + 正文 + 该类型的专有字段。
+
+    只比正文会把「正文相同但一个是文章、一个是便签」的笔记误判成重复，
+    图库/链接/账号的正文又是空的，所以必须把各自的字段一起带上。
+    """
+    payload = json.dumps(
+        [
+            note.type,
+            (note.title or "").strip(),
+            _content_key(content),
+            (note.description or "").strip(),
+            note.url or "",
+            note.account or "",
+            note.password or "",
+            note.remark or "",
+            list(note.images or []),
+            dict(sorted((note.date or {}).items())),
+        ],
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
 def now_iso() -> str:
@@ -333,11 +399,15 @@ class Library:
 
     def topic_notes(self, topic_id: str | None, state: str = "active", order: str = "updated") -> list[Note]:
         out = [n for n in self.notes.values() if n.state == state and (topic_id is None or n.topic_id == topic_id)]
-        if order == "title":
-            out.sort(key=lambda n: n.sort_key(order, self._content.get(n.id, "")))
-        else:
-            out.sort(key=lambda n: n.sort_key(order))
+        self.sort_notes(out, order)
         return out
+
+    def sort_notes(self, notes: list[Note], order: str = "updated") -> None:
+        """就地排序，标题用中文拼音序（见 compare_zh）。"""
+        if order == "title":
+            notes.sort(key=functools.cmp_to_key(self._cmp_by_title))
+        else:
+            notes.sort(key=lambda n: n.sort_key(order))
 
     def note_counts(self, state: str = "active") -> dict[str, int]:
         """各主题下的笔记数；state 默认只数正常笔记，归档主题要看 archived。"""
@@ -349,11 +419,21 @@ class Library:
 
     def sorted_notes(self, state: str = "active", topic_id: str | None = None, order: str = "updated") -> list[Note]:
         out = [n for n in self.notes.values() if n.state == state and (topic_id is None or n.topic_id == topic_id)]
-        if order == "title":
-            out.sort(key=lambda n: n.sort_key(order, self._content.get(n.id, "")))
-        else:
-            out.sort(key=lambda n: n.sort_key(order))
+        self.sort_notes(out, order)
         return out
+
+    def _cmp_by_title(self, a: Note, b: Note) -> int:
+        pa = 0 if a.pinned_at else 1
+        pb = 0 if b.pinned_at else 1
+        if pa != pb:
+            return -1 if pa < pb else 1
+        c = compare_zh(
+            a.display_title(self._content.get(a.id, "")),
+            b.display_title(self._content.get(b.id, "")),
+        )
+        if c:
+            return c
+        return (a.id > b.id) - (a.id < b.id)  # 标题相同时给个稳定次序
 
     def search(self, query: str, state: str = "active", pool: list[Note] | None = None) -> list[Note]:
         q = (query or "").strip().lower()
@@ -407,12 +487,16 @@ class Library:
         else:
             t = self.topics.get(topic_id)
             if t:
+                # 记住它原本是归档主题，恢复时才不会一律变成正常主题
+                if t.state == "archived" and not t.archived_at:
+                    t.archived_at = now_iso()
                 t.state = "trash"
-                # 和手机版一致：删主题时，主题里还在用的笔记一起进回收站
+                # 和手机版一致：删主题时，主题里还在用的笔记一起进回收站。
+                # 归档的笔记也算「在用」，否则恢复主题后它们会卡在归档里看不见。
                 ts = now_iso()
                 t.deleted_at = ts
                 for n in self.notes.values():
-                    if n.topic_id == topic_id and n.state == "active":
+                    if n.topic_id == topic_id and n.state != "trash":
                         n.state = "trash"
                         n.deleted_at = ts
         self.save()
@@ -435,14 +519,19 @@ class Library:
         if not t or t.state != "trash":
             return 0
         stamp = t.deleted_at
-        t.state = "active"
+        # 原来是归档主题的，恢复后仍回归档区，不要混进正常主题里
+        t.state = "archived" if t.archived_at else "active"
         t.deleted_at = None
         t.updated_at = now_iso()
+        # 回收站期间列表被重新排过，旧 order 可能已被占用，恢复就排到最后
+        others = [x.order for x in self.topics.values() if x.state != "trash" and x.id != topic_id]
+        t.order = (max(others) + 1) if others else 0.0
         n = 0
         if stamp:
             for note in self.notes.values():
                 if note.topic_id == topic_id and note.state == "trash" and note.deleted_at == stamp:
-                    note.state = "active"
+                    # 恢复后跟着主题走：归档主题里的仍归归档，正常主题里当初归档过的也仍归归档
+                    note.state = "archived" if (t.state == "archived" or note.archived_at) else "active"
                     note.deleted_at = None
                     n += 1
         self.save()
@@ -468,14 +557,18 @@ class Library:
     def add_note(self, topic_id: str, type: str = "note", content: str = "", title: str | None = None) -> Note:
         order = max([n.order for n in self.notes.values() if n.topic_id == topic_id], default=0.0) + 1.0
         ts = now_iso()
+        # 在归档主题里新建的笔记直接就是归档状态，否则建完立刻「看不见」了
+        topic = self.topics.get(topic_id)
+        archived = bool(topic and topic.state == "archived")
         n = Note(
             id=self.new_id(),
             topic_id=topic_id,
             type=type,
-            state="active",
+            state="archived" if archived else "active",
             title=title,
             created_at=ts,
             updated_at=ts,
+            archived_at=ts if archived else None,
             order=order,
         )
         self.notes[n.id] = n
@@ -547,20 +640,27 @@ class Library:
             self.save()
         return n
 
-    def duplicate_groups(self, min_chars: int = 1) -> list[list[Note]]:
-        """按正文内容找重复笔记，返回分组（每组按创建时间升序，组按条数降序）。
+    def empty_trash(self) -> int:
+        """清空回收站，返回彻底删除的条数（一次写盘）。"""
+        ids = [x.id for x in self.notes.values() if x.state == "trash"]
+        return self.delete_notes(ids, hard=True) if ids else 0
 
-        正文先做「去掉行尾空白、合并连续空行」的归一化，避免同一个内容
-        因为换行差异被判成不同；回收站里的笔记不参与。
+    def duplicate_groups(self, min_chars: int = 1) -> list[list[Note]]:
+        """找「完全一样」的笔记，返回分组（每组按创建时间升序，组按条数降序）。
+
+        判重口径与导入时自动去重一致（`note_fingerprint`）：类型、标题、正文、
+        图片、链接、账号、日期都要一样才算重复 —— 只比正文会把
+        「同一段正文，一条是文章、一条是便签」这种正常笔记误判成重复。
+        正文为空的类型（图库、账号）不参与，回收站里的笔记不参与。
         """
         buckets: dict[str, list[Note]] = {}
         for note in self.notes.values():
             if note.state == "trash":
                 continue
-            key = _content_key(self.content(note.id))
-            if len(key) < min_chars:
+            content = self.content(note.id)
+            if len((content or "").strip()) < min_chars:
                 continue
-            buckets.setdefault(key, []).append(note)
+            buckets.setdefault(note_fingerprint(note, content), []).append(note)
         groups = [g for g in buckets.values() if len(g) > 1]
         for g in groups:
             g.sort(key=lambda n: (n.created_at or "", n.id))
@@ -581,12 +681,16 @@ class Library:
         if not n:
             return
         t = self.topics.get(n.topic_id)
-        if not t or t.state != "active":
+        if not t or t.state == "trash":
             # 原主题已经删了，恢复时落到「（未分类）」，不要变成孤儿笔记
             n.topic_id = self.inbox_topic_id()
-        n.state = "active"
+            t = self.topics.get(n.topic_id)
+        # 原来归档的笔记，从回收站恢复后仍然归档，别把它悄悄变回正常笔记
+        if n.archived_at or (t and t.state == "archived"):
+            n.state = "archived"
+        else:
+            n.state = "active"
         n.deleted_at = None
-        n.archived_at = None
         self.save()
 
     def archive_note(self, note_id: str, archived: bool = True) -> None:
@@ -597,11 +701,21 @@ class Library:
         n.archived_at = now_iso() if archived else None
         self.save()
 
+    def _follow_topic_state(self, note: Note, topic: Topic) -> None:
+        """让笔记的归档状态跟着目标主题走（拖到归档主题就归档，拖回就恢复）。"""
+        if topic.state == "archived" and note.state == "active":
+            note.state = "archived"
+            note.archived_at = now_iso()
+        elif topic.state == "active" and note.state == "archived":
+            note.state = "active"
+            note.archived_at = None
+
     def move_note(self, note_id: str, topic_id: str) -> None:
         n = self.notes.get(note_id)
         if n and topic_id in self.topics:
             n.topic_id = topic_id
             n.updated_at = now_iso()
+            self._follow_topic_state(n, self.topics[topic_id])
             self.save()
 
     def move_notes(self, note_ids, topic_id: str) -> int:
@@ -617,12 +731,7 @@ class Library:
             n.topic_id = topic_id
             n.updated_at = now_iso()
             # 目标主题是归档的，笔记跟着归档；拖回正常主题就恢复
-            if topic.state == "archived" and n.state == "active":
-                n.state = "archived"
-                n.archived_at = now_iso()
-            elif topic.state == "active" and n.state == "archived":
-                n.state = "active"
-                n.archived_at = None
+            self._follow_topic_state(n, topic)
             moved += 1
         if moved:
             self.save()
@@ -634,6 +743,40 @@ class Library:
             return
         n.pinned_at = None if n.pinned_at else now_iso()
         self.save()
+
+    def archive_notes(self, note_ids, archived: bool = True) -> int:
+        """批量归档 / 取消归档，返回改动条数（只存一次盘）。"""
+        ts = now_iso()
+        n = 0
+        for nid in note_ids:
+            note = self.notes.get(nid)
+            if not note or note.state == "trash":
+                continue
+            target = "archived" if archived else "active"
+            if note.state == target:
+                continue
+            note.state = target
+            note.archived_at = ts if archived else None
+            n += 1
+        if n:
+            self.save()
+        return n
+
+    def pin_notes(self, note_ids, pinned: bool = True) -> int:
+        """批量置顶 / 取消置顶（只存一次盘）。"""
+        ts = now_iso()
+        n = 0
+        for nid in note_ids:
+            note = self.notes.get(nid)
+            if not note:
+                continue
+            if bool(note.pinned_at) == pinned:
+                continue
+            note.pinned_at = ts if pinned else None
+            n += 1
+        if n:
+            self.save()
+        return n
 
     def set_reminder(self, note_id: str, when_iso: str | None) -> None:
         """设置/清除笔记提醒。when_iso 为 None 表示清除。"""

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
 import os
 import re
@@ -46,29 +45,10 @@ class ImportReport:
 
 
 def _dedupe_key(note: Note, content: str) -> str:
-    """「是不是同一条笔记」的指纹：类型 + 正文 + 该类型的专有字段。
+    """「是不是同一条笔记」的指纹，与「查找重复笔记」共用一套口径。"""
+    from .store import note_fingerprint
 
-    只比正文会把所有图库、链接误判成重复（它们的 content 是空的），
-    所以按类型把各自的字段也带上。
-    """
-    payload = json.dumps(
-        [
-            note.type,
-            (note.title or "").strip(),
-            _norm_newlines(content or "").strip(),
-            (note.description or "").strip(),
-            note.url or "",
-            note.account or "",
-            note.password or "",
-            note.remark or "",
-            list(note.images or []),
-            dict(sorted((note.date or {}).items())),
-        ],
-        ensure_ascii=False,
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+    return note_fingerprint(note, content)
 
 
 def _fix_zip_name(info: zipfile.ZipInfo) -> str:

@@ -762,7 +762,7 @@ class MainWindow(QMainWindow):
             notes = self.lib.search(self._search_buf, pool=pool)
             # 搜索结果也跟着当前的排序方式走，不然和列表其它时候不一致
             if self.sort_mode != "updated":
-                notes.sort(key=lambda n: n.sort_key(self.sort_mode, self.lib.content(n.id)))
+                self.lib.sort_notes(notes, self.sort_mode)
             self.header_label.setText("搜索结果")
         self.header_label.setToolTip(title if not self._search_buf else self._search_buf)
 
@@ -962,13 +962,23 @@ class MainWindow(QMainWindow):
         a_export_md = menu.addAction("导出为 Markdown…")
         a_export_pdf = menu.addAction("导出为 PDF…")
         menu.addSeparator()
-        a_del = a_restore = None
+        a_del = a_restore = a_purge = None
         if note.state == "trash":
             a_restore = menu.addAction("从回收站恢复")
+            a_purge = menu.addAction("彻底删除")
         else:
             a_del = menu.addAction("删除到回收站")
         act = menu.exec_(pos)
         if act is None:
+            return
+        if act is a_purge:
+            if not confirm(self, "彻底删除", "这条笔记会被永久删除，无法恢复。继续？", danger=True):
+                return
+            self.lib.delete_note(nid, hard=True)
+            self.lib.save()
+            self.refresh_topics()
+            self._reload_notes(animate=True)
+            self._toast("已永久删除")
             return
         if act is a_open:
             for row in range(self.note_list.count()):
@@ -1017,10 +1027,14 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         if self.view[0] == "trash":
             a_restore = menu.addAction(f"恢复 {n} 条")
+            a_purge = menu.addAction(f"彻底删除 {n} 条")
             a_pin = a_arch = None
         else:
-            a_pin = menu.addAction(f"置顶 {n} 条")
-            a_arch = menu.addAction(f"归档 {n} 条")
+            a_purge = None
+            pinned = all(self.lib.notes[i].pinned_at for i in ids)
+            a_pin = menu.addAction(f"取消置顶 {n} 条" if pinned else f"置顶 {n} 条")
+            arch = self.view[0] == "archived"
+            a_arch = menu.addAction(f"取消归档 {n} 条" if arch else f"归档 {n} 条")
             a_restore = None
         move_menu = menu.addMenu(f"移动到主题（{n} 条）")
         for t in self._move_targets():
@@ -1032,34 +1046,39 @@ class MainWindow(QMainWindow):
         if act is None:
             return
         if act is a_pin:
-            self._bulk_apply(ids, "pin")
+            self._bulk_apply(ids, "unpin" if self.lib.notes[ids[0]].pinned_at else "pin")
         elif act is a_arch:
-            self._bulk_apply(ids, "archive")
+            self._bulk_apply(ids, "unarchive" if self.view[0] == "archived" else "archive")
         elif act is a_restore:
             self._bulk_apply(ids, "restore")
+        elif act is a_purge:
+            if confirm(self, "彻底删除", f"{n} 条笔记会被永久删除，无法恢复。继续？", danger=True):
+                self._bulk_apply(ids, "purge")
         elif act is a_del:
             self._bulk_apply(ids, "delete")
         elif act.parent() is move_menu:
             self._bulk_apply(ids, "move", act.data())
 
     def _bulk_apply(self, ids, kind: str, payload=None):
-        """对一批笔记执行同一操作。kind: pin/archive/restore/delete/move"""
+        """对一批笔记执行同一操作。kind: pin/unpin/archive/unarchive/restore/delete/purge/move"""
         self._flush_save()
-        for nid in ids:
-            note = self.lib.notes.get(nid)
-            if note is None:
-                continue
-            if kind == "pin":
-                if not note.pinned_at:
-                    self.lib.toggle_pin(nid)
-            elif kind == "archive":
-                self.lib.archive_note(nid, True)
-            elif kind == "restore":
+        if kind == "pin":
+            self.lib.pin_notes(ids, True)
+        elif kind == "unpin":
+            self.lib.pin_notes(ids, False)
+        elif kind == "archive":
+            self.lib.archive_notes(ids, True)
+        elif kind == "unarchive":
+            self.lib.archive_notes(ids, False)
+        elif kind == "restore":
+            for nid in ids:
                 self.lib.restore_note(nid)
-            elif kind == "delete":
-                self.lib.delete_note(nid)
-            elif kind == "move" and payload:
-                self.lib.move_note(nid, payload)
+        elif kind == "delete":
+            self.lib.delete_notes(ids)
+        elif kind == "purge":
+            self.lib.delete_notes(ids, hard=True)
+        elif kind == "move" and payload:
+            self.lib.move_notes(ids, payload)
         self.lib.save()
         self.refresh_topics()
         self._reload_notes(animate=True)
@@ -1386,11 +1405,10 @@ class MainWindow(QMainWindow):
             self, "清空回收站", f"回收站里的 {len(notes)} 条笔记会被永久删除，无法恢复。继续？", danger=True
         ):
             return
-        for n in notes:
-            self.lib.delete_note(n.id, hard=True)
-        self.lib.save()
+        n = self.lib.empty_trash()
         self.refresh_topics()
         self._reload_notes(animate=True)
+        self._toast(f"已永久删除 {n} 条笔记")
 
     def toggle_topic_lock(self, topic):
         """锁定后主题不能改名、不能删除，避免手滑。"""
@@ -1402,7 +1420,7 @@ class MainWindow(QMainWindow):
     def open_settings(self, section_index=0):
         from .dialogs import SettingsDialog
 
-        previous_font = self.settings.get("font_family", "Microsoft YaHei")
+        previous_font = self.settings.get("font_family", "宋体")
         dlg = SettingsDialog(
             self,
             self.settings,
@@ -1430,13 +1448,22 @@ class MainWindow(QMainWindow):
         family = set_text_font(family)
         self.settings.set("font_family", family)
         QApplication.instance().setStyleSheet(app_qss())
-        font = QFont(family)
+
+        def font_like(widget):
+            """沿用控件原来的字号，只换字体族，避免切字体后整界面忽大忽小。"""
+            f = QFont(family)
+            if widget.font().pixelSize() > 0:
+                f.setPixelSize(widget.font().pixelSize())
+            elif widget.font().pointSizeF() > 0:
+                f.setPointSizeF(widget.font().pointSizeF())
+            return f
+
         for w in (self.note_list, self.topic_list, self.editor):
-            w.setFont(font)
+            w.setFont(font_like(w))
         # 编辑器里的正文框/预览框是构造时设的字体，这里一并换掉
         for w in self.editor.findChildren(QWidget):
             if isinstance(w, (QPlainTextEdit, QTextBrowser)):
-                w.setFont(font)
+                w.setFont(font_like(w))
         self.note_list.viewport().update()
         self.topic_list.viewport().update()
         self.editor.refresh_theme()
