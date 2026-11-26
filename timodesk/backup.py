@@ -34,6 +34,10 @@ def create(lib, stamp: str | None = None) -> Path:
         if notes.exists():
             for p in sorted(notes.glob("*.md")):
                 z.write(p, "notes/" + p.name)
+        hist = lib.root / "history"
+        if hist.exists():
+            for p in sorted(hist.rglob("*.json")):
+                z.write(p, "history/" + p.relative_to(hist).as_posix())
     prune(lib.root)
     return out
 
@@ -99,5 +103,11 @@ def restore(lib, src: Path) -> None:
         if src_notes.exists():
             for p in src_notes.glob("*.md"):
                 shutil.copy2(p, notes / p.name)
+        src_hist = tmp / "history"
+        if src_hist.exists():  # 备份里有历史版本就一并还原
+            hist = lib.root / "history"
+            if hist.exists():
+                shutil.rmtree(hist)
+            shutil.copytree(src_hist, hist)
         shutil.copy2(libjson, lib.json_path)
     lib.load()

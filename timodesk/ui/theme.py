@@ -538,6 +538,15 @@ QLabel#KeyCap {{
     background: {C['input_bg']}; border-radius: 5px; padding: 3px 8px;
     font-family: "Consolas", "Microsoft YaHei UI"; font-size: {int(12 * s)}px;
 }}
+QListWidget#HistoryList {{
+    background: {C['paper_alt']}; border: 1px solid {C['card_border']};
+    border-radius: 8px; padding: 4px;
+}}
+QListWidget#HistoryList::item {{ padding: 7px 8px; border-radius: 6px; color: {C['ink_soft']}; }}
+QListWidget#HistoryList::item:selected {{ background: {C['card']}; color: {C['ink']}; }}
+QTextBrowser#HistoryPreview {{
+    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 8px;
+}}
 QListWidget#BackupList, QListWidget#TrashTopicList, QTreeWidget#DupeTree {{
     background: {C['card']}; border: 1px solid {C['card_border']};
     border-radius: 8px; padding: 4px;

@@ -9,6 +9,9 @@ from PyQt5.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QListWidget,
+    QListWidgetItem,
+    QTextBrowser,
     QTreeWidget,
     QTreeWidgetItem,
     QLabel,
@@ -920,3 +923,116 @@ class DuplicatesDialog(FramelessDialog):
 
     def to_delete(self) -> list[str]:
         return list(self._to_delete)
+
+class HistoryDialog(FramelessDialog):
+    """一条笔记的历史版本：左边挑时间，右边看内容，可以恢复到某一版。"""
+
+    def __init__(self, parent, lib, note_id: str):
+        super().__init__(parent, "历史版本")
+        from ..render import render
+
+        self.lib = lib
+        self.note_id = note_id
+        self.restored = False
+        self._render = render
+        note = lib.notes.get(note_id)
+        title = note.display_title(lib.content(note_id)) if note else "笔记"
+
+        self.setFixedSize(780, 540)
+        lay = QVBoxLayout(self.body)
+        lay.setContentsMargins(26, 20, 26, 20)
+        lay.setSpacing(10)
+
+        tip = QLabel(
+            f"「{title}」改动过的版本都在这里，越靠上越新。"
+            "恢复会把笔记换成选中的那一版，恢复后还能按 Ctrl+Z 撤回。",
+            objectName="FieldLabel",
+        )
+        tip.setWordWrap(True)
+        lay.addWidget(tip)
+
+        self.empty = QLabel("这条笔记还没有历史版本（改过正文之后才会留档）。", objectName="EmptyHint")
+        lay.addWidget(self.empty)
+
+        body = QHBoxLayout()
+        body.setSpacing(12)
+        self.list = QListWidget(objectName="HistoryList")
+        self.list.setFixedWidth(228)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list.currentRowChanged.connect(self._show_version)
+        body.addWidget(self.list)
+        self.preview = QTextBrowser(objectName="HistoryPreview")
+        self.preview.setOpenLinks(False)
+        body.addWidget(self.preview, 1)
+        lay.addLayout(body, 1)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.btn_restore = QPushButton("恢复这一版")
+        self.btn_restore.setObjectName("Primary")
+        self.btn_restore.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.btn_restore.clicked.connect(self._restore)
+        btn_close = QPushButton("关闭")
+        btn_close.setObjectName("Link")
+        btn_close.clicked.connect(self.reject)
+        row.addWidget(self.btn_restore)
+        row.addStretch(1)
+        row.addWidget(btn_close)
+        lay.addLayout(row)
+
+        self._fill()
+        self.add_edge()
+
+    def _fill(self) -> None:
+        from datetime import datetime
+
+        from ..store import parse_iso
+
+        self.versions = self.lib.history.versions(self.note_id)
+        self.list.clear()
+        for v in self.versions:
+            ts = parse_iso(v.at)
+            when = datetime.fromtimestamp(ts).strftime("%m-%d %H:%M:%S") if ts else v.at[:16]
+            label = f"{when}  ·  {v.chars} 字"
+            it = QListWidgetItem(label)
+            it.setData(Qt.UserRole, v.stamp)
+            if v.title:
+                it.setToolTip(v.title)
+            self.list.addItem(it)
+        has = bool(self.versions)
+        self.list.setVisible(has)
+        self.preview.setVisible(has)
+        self.empty.setVisible(not has)
+        self.btn_restore.setEnabled(has)
+        if has:
+            self.list.setCurrentRow(0)
+            self._show_version(0)
+
+    def _show_version(self, row: int) -> None:
+        if row < 0 or row >= len(getattr(self, "versions", [])):
+            self.preview.setHtml("")
+            return
+        from datetime import datetime
+
+        from ..store import parse_iso
+
+        data = self.lib.history.read(self.note_id, self.versions[row].stamp) or {}
+        ts = parse_iso(str(data.get("at") or ""))
+        when = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else str(data.get("at") or "")[:19]
+        head = f"<p style='color:#86868b;font-size:12px'>{when}</p>"
+        self.preview.setHtml(head + self._render(str(data.get("content") or ""), self.lib.root, "（这一版是空的）"))
+
+    def _restore(self) -> None:
+        row = self.list.currentRow()
+        if row < 0 or row >= len(self.versions):
+            return
+        data = self.lib.history.read(self.note_id, self.versions[row].stamp)
+        if not data:
+            return
+        self.restore_data = data
+        self.restored = True
+        self.accept()
+
+    def version_data(self) -> dict | None:
+        return getattr(self, "restore_data", None)
+

@@ -199,7 +199,8 @@ class NoteCardDelegate(QStyledItemDelegate):
         painter.drawLine(left, footer, right, footer)
         painter.setFont(meta)
         painter.setPen(QColor(C["muted"]))
-        when = human_time(note.updated_at or note.created_at)
+        # 卡片上显示创建日期（用户要求：日期看「什么时候写的」，不是「什么时候改的」）
+        when = human_time(note.created_at or note.updated_at)
         if note.remind_at:
             when = "提醒 " + human_time(note.remind_at)
         metrics = QFontMetrics(meta)

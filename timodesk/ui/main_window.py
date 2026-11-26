@@ -47,7 +47,7 @@ from ..settings import Settings
 from ..importer import import_export
 from ..store import NOTE_TYPES, TYPE_LABELS, Library, Note
 from ..undo import Command, UndoStack
-from .dialogs import DuplicatesDialog, ProgressDialog, confirm, error, info
+from .dialogs import DuplicatesDialog, HistoryDialog, ProgressDialog, confirm, error, info
 from .editor import NoteEditor
 from .theme import NOTE_COLORS, apply_theme, color_icon, resolve as resolve_theme
 from .title_bar import (
@@ -1107,6 +1107,36 @@ class MainWindow(QMainWindow):
             return
         self._show_note_actions(note, self.note_list.viewport().mapToGlobal(pos))
 
+    def open_history(self, note_id: str) -> None:
+        """查看 / 恢复这条笔记的历史版本。"""
+        note = self.lib.notes.get(note_id)
+        if not note:
+            return
+        self._flush_save()
+        dlg = HistoryDialog(self, self.lib, note_id)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        data = dlg.version_data()
+        if not data:
+            return
+        with self.undoable("恢复历史版本", note_ids=[note_id]):
+            self.lib.set_content(note_id, str(data.get("content") or ""))
+            note.title = (data.get("title") or "").strip() or None
+            fields = data.get("fields") or {}
+            note.description = str(fields.get("description") or "")
+            note.url = fields.get("url") or None
+            note.account = str(fields.get("account") or "")
+            note.password = str(fields.get("password") or "")
+            note.remark = str(fields.get("remark") or "")
+            note.images = list(fields.get("images") or [])
+            note.date = dict(fields.get("date") or {}) or None
+            self.lib.touch(note_id)
+            self.lib.save()
+        self.editor.set_note(self.lib.notes[note_id])
+        self._reload_notes(select_id=note_id)
+        self._refresh_item(note_id)
+        self._toast("已恢复到这版内容（Ctrl+Z 可撤回）")
+
     def _show_note_actions(self, note, pos):
         self.save_now()
         nid = note.id
@@ -1130,6 +1160,7 @@ class MainWindow(QMainWindow):
             if t.id != note.topic_id:
                 act = move_menu.addAction(self._move_label(t))
                 act.setData(t.id)
+        a_history = menu.addAction("历史版本…")
         a_dup = menu.addAction("复制笔记")
         a_copy_md = menu.addAction("复制为 Markdown")
         a_export_md = menu.addAction("导出为 Markdown…")
@@ -1151,6 +1182,9 @@ class MainWindow(QMainWindow):
                     self.note_list.setCurrentRow(row)
                     self._open_grid_note(item)
                     break
+            return
+        if act is a_history:
+            self.open_history(nid)
             return
         if act is a_copy_md:
             QApplication.clipboard().setText(note_markdown(note, self.lib.content(nid)))

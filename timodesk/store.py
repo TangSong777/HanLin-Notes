@@ -19,6 +19,8 @@ import shutil
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
+
+from .history import NoteHistory
 from pathlib import Path
 # 笔记类型：与外部导出格式的 type 名称一致
 INBOX_TOPIC = "（未分类）"
@@ -310,6 +312,7 @@ class Library:
         self.load_error: str | None = None
         self.bad_files: list[str] = []
         self._dirty = False
+        self.history = NoteHistory(self.root)
 
     # ---------- 路径 ----------
     @property
@@ -459,6 +462,15 @@ class Library:
         return self._content[note_id]
 
     def set_content(self, note_id: str, text: str) -> None:
+        old = self.content(note_id)
+        if old and old != text:
+            note = self.notes.get(note_id)
+            if note is not None:
+                # 先把「改之前」的那一版留档，再覆盖正文
+                try:
+                    self.history.capture(note, old)
+                except OSError:
+                    pass
         self._content[note_id] = text
         p = self.note_path(note_id)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -688,6 +700,10 @@ class Library:
             p = self.note_path(note_id)
             if p.exists():
                 p.unlink()
+            try:
+                self.history.drop(note_id)
+            except OSError:
+                pass
         else:
             n.state = "trash"
             n.deleted_at = now_iso()
@@ -706,6 +722,10 @@ class Library:
                 p = self.note_path(note_id)
                 if p.exists():
                     p.unlink()
+                try:
+                    self.history.drop(note_id)
+                except OSError:
+                    pass
             else:
                 note.state = "trash"
                 note.deleted_at = now_iso()
