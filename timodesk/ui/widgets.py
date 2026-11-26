@@ -421,7 +421,7 @@ class AutoFadeScrollBar(QScrollBar):
 class NoteList(QListWidget):
     """支持键盘、多选及跨主题拖动的自适应网格。"""
 
-    MIME = "application/x-timo-note"
+    MIME = "application/x-hanlin-note"
     deleteRequested = pyqtSignal(list)
     openRequested = pyqtSignal(QListWidgetItem)
 

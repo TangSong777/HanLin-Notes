@@ -60,7 +60,7 @@ check("重复拖到同一主题不报错", lib.notes[nid].topic_id == b.id)
 
 # 5. MIME 类型常量
 from timodesk.ui.widgets import NoteList
-check("MIME 常量", NoteList.MIME == "application/x-timo-note")
+check("MIME 常量", NoteList.MIME == "application/x-hanlin-note")
 
 # 6. 真实 dropEvent：用 QDropEvent 走一遍 TopicList.dropEvent
 from PyQt5.QtCore import QMimeData, QPointF, Qt

@@ -1,6 +1,6 @@
 """Markdown 渲染：把笔记正文转成预览用的 HTML。
 
-Timo 只支持「简单 Markdown」，这里按便签的阅读习惯放宽一点：
+外部导出格式只支持「简单 Markdown」，这里按便签的阅读习惯放宽一点：
 换行即断行（nl2br），支持标题、粗斜体、列表、待办、引用、代码、表格、图片和链接。
 """
 from __future__ import annotations

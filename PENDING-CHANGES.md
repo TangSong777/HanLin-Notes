@@ -26,3 +26,14 @@
 - `tests/run_all.py` 的判定改为「非零失败数才算失败」，之前 `30 ok / 0 FAIL` 被误判成失败。
 - 新增 `tests/test_undo.py`（34 项，含真实按键：编辑器里 Ctrl+Z 只撤文字、列表焦点下 Ctrl+Z 撤排序）。
 - 60/60 测试通过。
+
+## 2026-11-26 — 去掉第三方痕迹：新应用图标、文案与内部命名中性化
+
+- 应用图标重做：`tools/make-icon.py` 生成「珊瑚红圆角外框 + 三条递减横线」的几何徽章（不再用「记」字），16/20/24 小尺寸单独优化，看不出笔画粘连；`assets/hanlin-notes.ico`、`assets/hanlin-notes.png`、`docs/icon.png` 已重出。
+- 界面文案：「Timo 导出包（ZIP）…」「Timo 导出文件夹…」「Timo ZIP…」→「笔记包（ZIP）…」「笔记包（解压文件夹）…」「笔记包（ZIP）…」；欢迎页、导入/导出对话框标题与进度框同步。
+- 内部命名：备份前缀 `timo-backup-` → `hanlin-backup-`（`backup.list_all()` 同时认旧前缀，历史备份仍可见）；拖拽 MIME `application/x-timo-note` → `application/x-hanlin-note`；导入临时目录前缀、导出默认文件名 `HanLin_Notes_Export_*.zip`；QSettings 组织名 `HanLin-Notes`。
+- 数据目录：`%LOCALAPPDATA%\TimoDesktop` → `HanLinNotes`，首次启动若只发现旧目录会自动改名迁移；环境变量支持 `HANLIN_DATA_DIR`（旧的 `TIMO_DATA_DIR` 仍认）。
+- 代码注释：把「Timo 导出的…」统一改成「外部导出格式的…」；`timo://file-store/` 这个 URI 前缀是 ZIP 格式约定，保留并加注释说明。
+- 新增 `SetCurrentProcessExplicitAppUserModelID("HanLin.Notes.Desktop")`：任务栏与通知按自己的应用标识分组，不再受旧的图标缓存影响。
+- README：开头改成「独立软件，只是数据格式兼容」，删掉「沿用 Timo 思路」的从属表述；操作步骤与功能表里的旧菜单名同步。
+- `tests/test_drag.py` 的 MIME 断言同步；60/60 测试通过。

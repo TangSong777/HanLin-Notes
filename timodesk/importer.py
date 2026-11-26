@@ -1,4 +1,4 @@
-"""从 Timo 的「可读数据导出」ZIP 导入到本地库。"""
+"""从笔记包 ZIP（兼容外部笔记 App 的「可读数据导出」）导入到本地库。"""
 from __future__ import annotations
 
 import csv
@@ -131,7 +131,7 @@ def _load_account_passwords(root: Path) -> dict[str, dict]:
 
 def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str = "replace",
                   dedupe: bool = True) -> ImportReport:
-    """导入 Timo 导出包。
+    """导入笔记包。
 
     mode="replace"：清空现有内容后整体替换。
     mode="merge"：保留现有笔记，只添加包里没有的新笔记（同 id 跳过）。
@@ -143,7 +143,7 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
         if src_path.is_dir():
             root = src_path
         else:
-            tmp = tempfile.mkdtemp(prefix="timo_import_")
+            tmp = tempfile.mkdtemp(prefix="hanlin_import_")
             root = extract_export(src_path, tmp)
 
         data_dir = root / "data"

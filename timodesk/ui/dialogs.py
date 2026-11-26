@@ -352,7 +352,10 @@ class BackupDialog(FramelessDialog):
         items = backup.list_all(self.lib.root)
         for it in items:
             size = it["size"] / 1024
-            label = it["name"].replace("timo-backup-", "").replace(".zip", "")
+            label = it["name"]
+            for pre in ("hanlin-backup-", "timo-backup-"):
+                label = label.replace(pre, "")
+            label = label.replace(".zip", "")
             text = f"{label}    ·    {it['mtime']:%m-%d %H:%M}    ·    {size:.0f} KB"
             row = QListWidgetItem(text)
             row.setData(0x0100, str(it["path"]))
@@ -567,7 +570,7 @@ class ImportModeDialog(FramelessDialog):
     """已有数据时选择：合并（只加新的）或替换（清空后导入）。"""
 
     def __init__(self, parent, note_count: int):
-        super().__init__(parent, "导入 Timo 数据")
+        super().__init__(parent, "导入笔记包")
         from PyQt5.QtWidgets import QHBoxLayout
 
         self.mode: str | None = None

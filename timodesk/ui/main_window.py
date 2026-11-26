@@ -260,10 +260,10 @@ class MainWindow(QMainWindow):
         menu.aboutToShow.connect(self._sync_undo_actions)
         menu.addSeparator()
         incoming = menu.addMenu("导入")
-        incoming.addAction("Timo 导出包（ZIP）…", self.import_zip)
-        incoming.addAction("Timo 导出文件夹…", self.import_folder)
+        incoming.addAction("笔记包（ZIP）…", self.import_zip)
+        incoming.addAction("笔记包（解压文件夹）…", self.import_folder)
         outgoing = menu.addMenu("导出")
-        outgoing.addAction("Timo ZIP…", self.export_zip)
+        outgoing.addAction("笔记包（ZIP）…", self.export_zip)
         outgoing.addAction("Markdown 文件夹…", self.export_md_tree)
         menu.addAction("打开数据文件夹", self.open_data_dir)
         menu.addAction("备份与恢复…", self.backup_dialog)
@@ -1366,7 +1366,7 @@ class MainWindow(QMainWindow):
 
     # ---------------- 数据操作 ----------------
     def import_zip(self):
-        path, _ = QFileDialog.getOpenFileName(self, "导入 Timo 导出包", "", "Timo 导出 (*.zip);;所有文件 (*)")
+        path, _ = QFileDialog.getOpenFileName(self, "导入笔记包", "", "笔记包 (*.zip);;所有文件 (*)")
         if not path:
             return
         self._do_import(path)
@@ -1467,7 +1467,7 @@ class MainWindow(QMainWindow):
             if not pick.exec_() or not pick.mode:
                 return
             mode = pick.mode
-        dlg = ProgressDialog(self, "导入 Timo 数据", "正在导入…")
+        dlg = ProgressDialog(self, "导入笔记包", "正在导入…")
         dlg.show()
         QApplication.processEvents()
 
@@ -1698,7 +1698,7 @@ class MainWindow(QMainWindow):
 
     def export_zip(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "导出为 Timo ZIP", f"Timo_Desktop_Export_{_stamp()}.zip", "ZIP (*.zip)"
+            self, "导出笔记包", f"HanLin_Notes_Export_{_stamp()}.zip", "ZIP (*.zip)"
         )
         if not path:
             return

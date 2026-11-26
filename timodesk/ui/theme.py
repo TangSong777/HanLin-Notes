@@ -184,7 +184,7 @@ def apply_theme(app, mode: str) -> None:
     app.setStyleSheet(app_qss())
 
 
-# 笔记颜色标记沿用 Timo 的 color 字段，切换主题时保持原色。
+# 笔记颜色标记沿用导入数据的 color 字段，切换主题时保持原色。
 NOTE_COLORS = [
     ("无", None),
     ("浅灰", "#e8e8e8"),

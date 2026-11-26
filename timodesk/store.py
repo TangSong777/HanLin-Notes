@@ -6,7 +6,7 @@
   用户随时可以用任何编辑器打开、备份、git 管理。
 * 元数据集中在一个 ``library.json`` 里（原子写入），启动时整体载入内存。
   1000~10000 条笔记的规模下，内存过滤搜索足够快，也不引入数据库依赖。
-* 笔记 id 沿用 Timo 导出的原始 id，保证「导入 → 导出」可逆。
+* 笔记 id 沿用导入时的原始 id，保证「导入 → 导出」可逆。
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-# 笔记类型：与 Timo 导出的 type 名称一致
+# 笔记类型：与外部导出格式的 type 名称一致
 INBOX_TOPIC = "（未分类）"
 
 # ---------- 中文排序 ----------
@@ -71,7 +71,7 @@ TYPE_LABELS = {
     "date": "日子",
     "account": "账号",
 }
-# typeCode ↔ 类型名（来自 Timo 导出数据）
+# typeCode ↔ 类型名（来自导入数据）
 TYPE_CODE = {"note": 0, "account": 1, "link": 2, "gallery": 3, "article": 4, "date": 6}
 
 # 笔记状态
@@ -134,13 +134,13 @@ def note_fingerprint(note: "Note", content: str) -> str:
 
 
 def now_iso() -> str:
-    """与 Timo 一致的 UTC ISO 时间（毫秒 + Z）。"""
+    """外部导出格式用的 UTC ISO 时间（毫秒 + Z）。"""
     t = time.time()
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + f".{int(t * 1000) % 1000:03d}Z"
 
 
 def to_iso(dt) -> str:
-    """本地 datetime → Timo 风格 UTC ISO（毫秒 + Z）。"""
+    """本地 datetime → 导出用的 UTC ISO（毫秒 + Z）。"""
     from datetime import timezone
 
     if dt.tzinfo is None:
@@ -256,7 +256,7 @@ class Note:
     date: dict | None = None
     tags: list[str] = field(default_factory=list)
     order: float = 0.0
-    # 本地提醒（Timo 导出包不含此字段，导出时会丢失）
+    # 本地提醒（外部导出格式不含此字段，导出时会丢失）
     remind_at: str | None = None
 
     def to_json(self) -> dict:

@@ -40,7 +40,8 @@ def base_dir() -> Path:
 
 def data_dir() -> Path:
     """便携优先：程序目录/Data；不可写时退到用户目录。"""
-    d = Path(os.environ.get("TIMO_DATA_DIR") or (base_dir() / "Data"))
+    env = os.environ.get("HANLIN_DATA_DIR") or os.environ.get("TIMO_DATA_DIR")
+    d = Path(env) if env else (base_dir() / "Data")
     try:
         d.mkdir(parents=True, exist_ok=True)
         probe = d / ".write_test"
@@ -48,7 +49,14 @@ def data_dir() -> Path:
         probe.unlink()
         return d
     except Exception:
-        alt = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TimoDesktop"
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
+        alt = base / "HanLinNotes"
+        legacy = base / "TimoDesktop"
+        if not alt.exists() and legacy.exists():
+            try:
+                legacy.rename(alt)      # 旧版本的用户目录，搬过来
+            except OSError:
+                pass
         alt.mkdir(parents=True, exist_ok=True)
         return alt
 
@@ -114,7 +122,7 @@ def _schedule_delete(paths: list[str]) -> None:
 
 
 class WelcomeDialog(FramelessDialog):
-    """首次启动：导入 Timo 导出包，或从空库开始。"""
+    """首次启动：导入笔记包，或从空库开始。"""
 
     def __init__(self, parent=None):
         super().__init__(parent, "欢迎使用寒淋笔记")
@@ -132,7 +140,7 @@ class WelcomeDialog(FramelessDialog):
         split.addLayout(lay, 1)
         lay.addWidget(QLabel("打开笔记库", objectName="WelcomeTitle"))
         desc = QLabel(
-            "创建一个本地库，或从 Timo 的「可读数据导出」迁入主题、笔记和附件。",
+            "创建一个本地库，或从已有的笔记包（ZIP / 解压后的文件夹）迁入主题、笔记和附件。",
             objectName="WelcomeDesc",
         )
         desc.setWordWrap(True)
@@ -144,7 +152,7 @@ class WelcomeDialog(FramelessDialog):
         lay.addWidget(btn_new)
 
         row = QHBoxLayout()
-        btn_import = QPushButton("导入 Timo ZIP", objectName="WelcomePlain")
+        btn_import = QPushButton("导入笔记包 ZIP", objectName="WelcomePlain")
         btn_import.clicked.connect(self._pick_zip)
         row.addWidget(btn_import, 1)
         btn_folder = QPushButton("导入解压文件夹", objectName="WelcomePlain")
@@ -164,7 +172,7 @@ class WelcomeDialog(FramelessDialog):
         self.add_edge()
 
     def _pick_zip(self):
-        p, _ = QFileDialog.getOpenFileName(self, "选择 Timo 导出包", "", "Timo 导出 (*.zip);;所有文件 (*)")
+        p, _ = QFileDialog.getOpenFileName(self, "选择笔记包", "", "笔记包 (*.zip);;所有文件 (*)")
         if p:
             self.choice, self.path = "import", p
             self.accept()
@@ -207,7 +215,7 @@ def recover_library(lib, notify: bool = True) -> bool:
 
 
 def _import_with_progress(lib: Library, path: str) -> bool:
-    pr = ProgressDialog(None, "导入 Timo 数据", "正在导入，请稍候…")
+    pr = ProgressDialog(None, "导入笔记包", "正在导入，请稍候…")
     pr.show()
     QApplication.processEvents()
 
@@ -235,12 +243,20 @@ def resolve_theme_mode(mode: str) -> str:
 
 
 def run():
+    if sys.platform == "win32":
+        # 显式的应用标识：任务栏、通知和托盘按这个名字分组，不沿用别的程序留下的图标缓存
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("HanLin.Notes.Desktop")
+        except Exception:
+            pass
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName("")
-    app.setOrganizationName("TimoDesktop")
+    app.setOrganizationName("HanLin-Notes")
     app.setFont(QFont("Microsoft YaHei UI", 9))
     root = data_dir()
     _install_excepthook(root)

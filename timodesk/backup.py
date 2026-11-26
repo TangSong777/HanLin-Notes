@@ -10,7 +10,8 @@ from datetime import datetime
 from pathlib import Path
 
 KEEP = 7
-PREFIX = "timo-backup-"
+PREFIX = "hanlin-backup-"
+LEGACY_PREFIX = "timo-backup-"   # 旧版本留下的备份，仍然要能列出来
 
 
 def backup_dir(root: Path) -> Path:
@@ -42,7 +43,8 @@ def list_all(root: Path) -> list[dict]:
     if not d.exists():
         return []
     items = []
-    for p in sorted(d.glob(PREFIX + "*.zip"), reverse=True):
+    files = list(d.glob(PREFIX + "*.zip")) + list(d.glob(LEGACY_PREFIX + "*.zip"))
+    for p in sorted(files, reverse=True):
         st = p.stat()
         items.append(
             {

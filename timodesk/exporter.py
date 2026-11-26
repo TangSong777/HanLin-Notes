@@ -1,4 +1,4 @@
-"""把本地库导出成 Timo「可读数据导出」ZIP，结构与官方导出一致，便于备份/迁移/对照。"""
+"""把本地库导出成笔记包 ZIP：结构与外部笔记 App 的「可读数据导出」一致，便于备份、迁移和导回手机。"""
 from __future__ import annotations
 
 import csv
@@ -86,7 +86,7 @@ def _readme(counts: dict) -> str:
 
 
 def export_zip(lib: Library, out: str | Path) -> tuple[Path, dict]:
-    """导出为 Timo 兼容 ZIP，返回 (路径, 统计)。"""
+    """导出为笔记包 ZIP（兼容外部导出格式），返回 (路径, 统计)。"""
     out = Path(out)
     if out.suffix.lower() != ".zip":
         out = out.with_suffix(".zip")
