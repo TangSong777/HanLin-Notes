@@ -7,8 +7,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from PyQt5.QtCore import (
+    QEasingCurve,
     QEvent,
     QPoint,
+    QPropertyAnimation,
     QSize,
     Qt,
     QTimer,
@@ -65,6 +67,7 @@ from .title_bar import (
     TitleBar,
     rounded_mask,
 )
+from .motion import BASE, attach_hover, enabled as motion_enabled
 from .widgets import AutoFadeScrollBar, NoteCardDelegate, NoteList, TopicDelegate, TopicList
 from .visuals import Notice, WorkspaceStack, glyph
 
@@ -228,6 +231,7 @@ class MainWindow(QMainWindow):
         self.topic_list.setDefaultDropAction(Qt.MoveAction)
         self.topic_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.topic_list.customContextMenuRequested.connect(self._topic_menu)
+        attach_hover(self.topic_list)
         self.topic_list.currentRowChanged.connect(self._on_topic_changed)
         self.topic_list.itemClicked.connect(lambda _: self._show_library())
         self.topic_list.notesDropped.connect(self._on_notes_dropped)
@@ -370,6 +374,7 @@ class MainWindow(QMainWindow):
         self.note_list.setItemDelegate(NoteCardDelegate(self.lib, self.note_list))
         self.note_list.setFrameShape(QListWidget.NoFrame)
         self.note_list.setMouseTracking(True)
+        attach_hover(self.note_list)
         self.note_list.setViewMode(QListView.IconMode)
         self.note_list.setMovement(QListView.Static)
         self.note_list.setResizeMode(QListView.Adjust)
@@ -984,7 +989,7 @@ class MainWindow(QMainWindow):
             self.note_list.setCurrentRow(found)
             self.note_list.blockSignals(False)
             if select_id:
-                self.note_list.scrollToItem(self.note_list.item(found))
+                self._smooth_scroll_to(found)
             note = self.lib.notes.get(target)
             if self.editor.note is not note:
                 self.editor.set_note(note, focus=False)
@@ -1002,6 +1007,29 @@ class MainWindow(QMainWindow):
         if animate and notes:
             self.note_list.reveal_cards()
         self._sync_batch_actions()
+
+    def _smooth_scroll_to(self, row: int, ms: int = BASE):
+        """选中项不在视野里时平滑滚过去，而不是瞬间跳。"""
+        item = self.note_list.item(row)
+        if item is None:
+            return
+        rect = self.note_list.visualItemRect(item)
+        if not rect.isValid():
+            return
+        if self.note_list.viewport().rect().contains(rect):
+            return
+        bar = self.note_list.verticalScrollBar()
+        target = max(bar.minimum(), min(bar.maximum(), bar.value() + rect.top() - 6))
+        if not motion_enabled() or abs(target - bar.value()) < 4:
+            bar.setValue(target)
+            return
+        anim = QPropertyAnimation(bar, b"value", self)
+        anim.setDuration(ms)
+        anim.setStartValue(bar.value())
+        anim.setEndValue(target)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.start()
+        self._scroll_anim = anim
 
     def _check_reminders(self):
         """把到点的提醒弹出来（每条只提醒一次）。"""

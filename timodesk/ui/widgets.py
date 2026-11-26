@@ -18,6 +18,8 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import QListView, QListWidget, QListWidgetItem, QScrollBar, QStyledItemDelegate, QStyle
 
+from .motion import FAST, SLOW, duration, mix
+
 from ..store import TYPE_LABELS
 from .theme import C
 from .visuals import glyph, motion_enabled
@@ -132,11 +134,17 @@ class NoteCardDelegate(QStyledItemDelegate):
         card = QRectF(option.rect).adjusted(5, 3, -8, -11)
         selected = bool(option.state & QStyle.State_Selected)
         hovered = bool(option.state & QStyle.State_MouseOver)
+        tracker = getattr(grid, "hover", None) if isinstance(grid, NoteList) else None
+        hv = tracker.progress_for(index.row()) if tracker is not None else (1.0 if hovered else 0.0)
+        if selected:
+            hv = 0.0
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 10 if hovered else 5))
-        painter.drawRoundedRect(card.translated(0, 2), 11, 11)
-        painter.setBrush(QColor(C["card_hover" if hovered and not selected else "card"]))
-        painter.setPen(QPen(QColor(C["accent" if selected else "card_border"]), 1.2 if selected else 1))
+        # 悬停时卡片轻微抬起：阴影更深、偏移多 1px
+        painter.setBrush(QColor(0, 0, 0, round(5 + 6 * hv)))
+        painter.drawRoundedRect(card.translated(0, 2 + round(hv)), 11, 11)
+        painter.setBrush(mix(C["card"], C["card_hover"], hv))
+        border = mix(C["card_border"], C["card_border_strong"], hv)
+        painter.setPen(QPen(QColor(C["accent"]) if selected else border, 1.2 if selected else 1))
         painter.drawRoundedRect(card, 11, 11)
 
         left, top = round(card.left() + 15), round(card.top() + 12)
@@ -332,13 +340,15 @@ class TopicDelegate(QStyledItemDelegate):
         r = option.rect.adjusted(1, 2, -2, -2)
         selected = bool(option.state & QStyle.State_Selected)
         hovered = bool(option.state & QStyle.State_MouseOver)
+        tracker = getattr(self.parent(), "hover", None)
+        hv = tracker.progress_for(index.row()) if tracker is not None else (1.0 if hovered else 0.0)
         if selected:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(C["checked_bg"]))
             painter.drawRoundedRect(r, 8, 8)
-        elif hovered:
+        elif hv > 0.01:
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(C["card_hover"]))
+            painter.setBrush(mix(C["paper_alt"], C["card_hover"], hv))
             painter.drawRoundedRect(r, 8, 8)
         cnt = self.counts.get(topic.id, 0)
         archived = getattr(topic, "state", "active") == "archived"
@@ -386,7 +396,7 @@ class AutoFadeScrollBar(QScrollBar):
         self._fx.setOpacity(1.0)
         self.setGraphicsEffect(self._fx)
         self._anim = QPropertyAnimation(self._fx, b"opacity", self)
-        self._anim.setDuration(240)
+        self._anim.setDuration(duration(SLOW))
         self._anim.setEasingCurve(QEasingCurve.OutCubic)
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -432,7 +442,7 @@ class NoteList(QListWidget):
         self._may_open = False
         self.card_opacity = 1.0
         self._reveal = QVariantAnimation(self)
-        self._reveal.setDuration(120)
+        self._reveal.setDuration(duration(FAST))
         self._reveal.setStartValue(0.68)
         self._reveal.setEndValue(1.0)
         self._reveal.setEasingCurve(QEasingCurve.OutCubic)

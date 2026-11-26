@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyQt5.QtCore import QPoint, QRectF, QSize, Qt
+from PyQt5.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRectF, QSize, Qt
 from PyQt5.QtGui import (
     QColor,
     QIcon,
@@ -20,6 +20,7 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
+from .motion import BASE, fade_in, enabled as motion_enabled
 from .theme import C
 
 # Win32 命中测试常量
@@ -253,6 +254,23 @@ class FramelessDialog(QDialog):
     def showEvent(self, ev):  # noqa: N802
         super().showEvent(ev)
         self.setMask(rounded_mask(self.width(), self.height(), self.RADIUS))
+        if not getattr(self, "_entered", False):
+            self._entered = True
+            self._animate_in()
+
+    def _animate_in(self):
+        """弹出时淡淡出现并上浮 8px——对话框小，用 effect 一次没有压力。"""
+        if not motion_enabled():
+            return
+        end = self.pos()
+        anim = QPropertyAnimation(self, b"pos", self)
+        anim.setDuration(BASE)
+        anim.setStartValue(end + QPoint(0, 8))
+        anim.setEndValue(end)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.start()
+        self._enter_anim = anim
+        fade_in(self, BASE, 0.0, 1.0)
 
 
 class BrandPanel(QFrame):

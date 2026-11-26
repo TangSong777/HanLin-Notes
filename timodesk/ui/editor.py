@@ -63,6 +63,7 @@ from ..render import TASK_RE, render
 from ..store import date_countdown, TYPE_LABELS, Library, Note
 from .dialogs import error as dlg_error
 from .theme import C, NOTE_COLORS, color_icon
+from .motion import FAST, fade_in
 from .visuals import glyph
 from .widgets import AutoFadeScrollBar, human_time
 
@@ -840,7 +841,10 @@ class NoteEditor(QWidget):
             "link": self.page_link,
             "date": self.page_date,
         }.get(note.type, self.page_text)
+        previous_page = self.stack.currentWidget()
         self.stack.setCurrentWidget(page)
+        if previous_page is not page:
+            fade_in(page, FAST, 0.55, 1.0)  # 换到另一种笔记类型时轻轻出现一次
 
         if note.type in ("note", "article"):
             self.edit.blockSignals(True)

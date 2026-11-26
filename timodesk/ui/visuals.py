@@ -1,13 +1,13 @@
 """工作台的线条图标与页面切换。"""
 from __future__ import annotations
 
-import sys
 from functools import lru_cache
 
 from PyQt5.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, QTimer, QVariantAnimation
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
-from PyQt5.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QStackedWidget, QWidget
+from PyQt5.QtWidgets import QGraphicsOpacityEffect, QLabel, QStackedWidget, QWidget
 
+from .motion import BASE, FAST, duration, enabled as motion_enabled
 from .theme import C
 
 
@@ -82,17 +82,6 @@ def glyph(name: str, role: str = "muted") -> QIcon:
     return icon
 
 
-def motion_enabled() -> bool:
-    if sys.platform == "win32":
-        from ctypes import byref, windll
-        from ctypes.wintypes import BOOL
-
-        enabled = BOOL()
-        if windll.user32.SystemParametersInfoW(0x1042, 0, byref(enabled), 0):
-            return bool(enabled.value)
-    return QApplication.isEffectEnabled(Qt.UI_General)
-
-
 class _PageSnapshot(QWidget):
     def __init__(self, parent, pixmap: QPixmap, direction: int):
         super().__init__(parent)
@@ -118,7 +107,7 @@ class WorkspaceStack(QStackedWidget):
         super().__init__(parent)
         self._snapshot = None
         self._animation = QVariantAnimation(self)
-        self._animation.setDuration(180)
+        self._animation.setDuration(duration(BASE))
         self._animation.setStartValue(0.0)
         self._animation.setEndValue(1.0)
         self._animation.setEasingCurve(QEasingCurve.OutCubic)
@@ -175,7 +164,7 @@ class Notice(QLabel):
         self._opacity = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._opacity)
         self._motion = QPropertyAnimation(self._opacity, b"opacity", self)
-        self._motion.setDuration(150)
+        self._motion.setDuration(duration(FAST))
         self._motion.setEasingCurve(QEasingCurve.OutCubic)
         self._motion.finished.connect(self._hide_if_faded)
         self.hide()
