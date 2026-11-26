@@ -326,6 +326,12 @@ QToolButton#NewTypeBtn::menu-indicator {{ image: none; width: 0; }}
 #RailLabel {{ color: {C['muted']}; font-size: {int(11 * s)}px; font-weight: 600; padding-left: 9px; }}
 QToolButton#RailIcon {{ padding: 4px; }}
 QToolButton#DataButton {{ padding: 8px 9px; text-align: left; }}
+QToolButton#CornerLink {{
+    border: none; background: transparent; padding: 1px 0;
+    color: {C['muted']}; font-size: {int(11 * s)}px;
+}}
+QToolButton#CornerLink:hover {{ color: {C['ink']}; }}
+QToolButton#CornerLink:checked {{ color: {C['accent_text']}; font-weight: 600; }}
 #SideSection {{ color: {C['muted']}; font-size: {int(11 * s)}px; font-weight: 600; padding: 2px 6px; }}
 QListWidget#TopicList, QListWidget#NavList {{ background: transparent; border: none; }}
 QListWidget#NavList::item {{
@@ -345,6 +351,9 @@ QToolButton#CollectionControl {{
 }}
 QToolButton#CollectionControl:hover, QToolButton#CollectionControl:focus {{ border-color: {C['accent_text']}; }}
 QToolButton#CollectionControl:checked {{ background: {C['checked_bg']}; color: {C['accent_text']}; }}
+QToolButton#CollectionControl:disabled {{
+    color: {C['faint']}; border-color: {C['line']}; background: transparent;
+}}
 QToolButton#CollectionControl::menu-indicator, QToolButton#DataButton::menu-indicator,
 QToolButton#NoteAction::menu-indicator {{ image: none; width: 0; }}
 QListWidget#NoteGrid {{ background: {C['canvas']}; border: none; font-family: {C['font_text']}; }}

@@ -193,14 +193,13 @@ class MainWindow(QMainWindow):
         column.addWidget(label)
         self.nav = QListWidget(objectName="NavList")
         self.nav.setFrameShape(QListWidget.NoFrame)
-        self.nav.setFixedHeight(114)
+        self.nav.setFixedHeight(46)
         self.nav.setIconSize(QSize(16, 16))
         self.nav.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        for kind, caption in (("all", "全部笔记"), ("archived", "归档"), ("trash", "回收站")):
-            item = QListWidgetItem(caption)
-            item.setData(Qt.UserRole, kind)
-            item.setSizeHint(QSize(0, 38))
-            self.nav.addItem(item)
+        item = QListWidgetItem("全部笔记")
+        item.setData(Qt.UserRole, "all")
+        item.setSizeHint(QSize(0, 38))
+        self.nav.addItem(item)
         self.nav.currentRowChanged.connect(self._on_nav_changed)
         self.nav.itemClicked.connect(lambda _: self._show_library())
         column.addWidget(self.nav)
@@ -239,6 +238,25 @@ class MainWindow(QMainWindow):
         foot = QVBoxLayout(footer)
         foot.setContentsMargins(0, 8, 0, 0)
         foot.setSpacing(3)
+        corner = QHBoxLayout()
+        corner.setContentsMargins(9, 0, 9, 4)
+        corner.setSpacing(10)
+        self.btn_archived = QToolButton(objectName="CornerLink")
+        self.btn_archived.setText("归档")
+        self.btn_archived.setCheckable(True)
+        self.btn_archived.setCursor(Qt.PointingHandCursor)
+        self.btn_archived.setToolTip("列出所有归档笔记")
+        self.btn_archived.clicked.connect(lambda: self.select_nav("archived"))
+        self.btn_trash = QToolButton(objectName="CornerLink")
+        self.btn_trash.setText("回收站")
+        self.btn_trash.setCheckable(True)
+        self.btn_trash.setCursor(Qt.PointingHandCursor)
+        self.btn_trash.setToolTip("列出回收站里的笔记")
+        self.btn_trash.clicked.connect(lambda: self.select_nav("trash"))
+        corner.addWidget(self.btn_archived)
+        corner.addWidget(self.btn_trash)
+        corner.addStretch()
+        foot.addLayout(corner)
         self.btn_data = QToolButton(objectName="DataButton")
         self.btn_data.setText("数据与设置")
         self.btn_data.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -615,10 +633,11 @@ class MainWindow(QMainWindow):
         else:
             kind = kind if kind in ("all", "archived", "trash") else "all"
             self.view = (kind, None)
-            row = {"all": 0, "archived": 1, "trash": 2}[kind]
+            row = 0 if kind == "all" else -1
         self.nav.blockSignals(True)
         self.nav.setCurrentRow(row)
         self.nav.blockSignals(False)
+        self._sync_corner()
         self._reload_notes(select_id=last_note)
         if self.settings.get("last_document") and self.editor.note is not None:
             self._open_document(animate=False, focus=False)
@@ -662,29 +681,59 @@ class MainWindow(QMainWindow):
         self.total_label.setText(f"{active} 条使用中 · 共 {total} 条")
 
     def select_nav(self, kind: str):
-        row = {"all": 0, "archived": 1, "trash": 2}.get(kind, 0)
-        if self.nav.currentRow() == row:
-            self._on_nav_changed(row)
-        else:
-            self.nav.setCurrentRow(row)
-
-    def _clear_search(self, focus: bool = False):
-        """清掉搜索词（切换视图或按 Esc），免得列表停在上一轮的搜索结果里。"""
-        self._search_buf = ""
-        self._search_timer.stop()
-        self.editor.set_highlight("")
-        self.search.clear()
-        if focus:
-            self.note_list.setFocus()
-
-    def _on_nav_changed(self, row: int):
-        kind = {0: "all", 1: "archived", 2: "trash"}.get(row, "all")
+        """切到「全部笔记 / 归档 / 回收站」。归档与回收站没有主导航项，走角落入口。"""
+        if kind == "all":
+            if self.nav.currentRow() == 0:
+                self._on_nav_changed(0)
+            else:
+                self.nav.setCurrentRow(0)
+            return
+        self.nav.blockSignals(True)
+        self.nav.setCurrentRow(-1)
+        self.nav.blockSignals(False)
         self._clear_search()
         self.topic_list.blockSignals(True)
         self.topic_list.clearSelection()
         self.topic_list.setCurrentRow(-1)
         self.topic_list.blockSignals(False)
         self.view = (kind, None)
+        self._sync_corner()
+        self._show_library()
+        self._reload_notes(animate=True)
+
+    def _sync_corner(self):
+        """角落的「归档 / 回收站」按钮跟随当前视图。"""
+        kind = self.view[0]
+        self.btn_archived.setChecked(kind == "archived")
+        self.btn_trash.setChecked(kind == "trash")
+
+    def _clear_search(self, focus: bool = False):
+        """清掉搜索词（切换视图或按 Esc），免得列表停在上一轮的搜索结果里。
+
+        切换视图时由调用方负责重载列表（focus=False）；按 Esc 时这里直接把
+        当前视图的列表恢复出来，否则列表会停在搜索结果上。
+        """
+        had = bool(self._search_buf) or bool(self.search.text())
+        self._search_buf = ""
+        self._search_timer.stop()
+        self.editor.set_highlight("")
+        self.search.clear()
+        if focus:
+            self.note_list.setFocus()
+            if had:
+                self._reload_notes()
+
+    def _on_nav_changed(self, row: int):
+        if row < 0:
+            return
+        kind = "all"
+        self._clear_search()
+        self.topic_list.blockSignals(True)
+        self.topic_list.clearSelection()
+        self.topic_list.setCurrentRow(-1)
+        self.topic_list.blockSignals(False)
+        self.view = (kind, None)
+        self._sync_corner()
         self._show_library()
         self._reload_notes(animate=True)
 
@@ -842,7 +891,8 @@ class MainWindow(QMainWindow):
         kind, tid = self.view
         order = getattr(self, "sort_mode", "updated")
         if kind == "all":
-            return self.lib.sorted_notes(state="active", order=order)
+            # 「全部笔记」永远按时间倒序（最近更新在前），不受排序菜单影响
+            return self.lib.sorted_notes(state="active", order="updated")
         if kind == "archived":
             return self.lib.sorted_notes(state="archived", order=order)
         if kind == "trash":
@@ -874,13 +924,17 @@ class MainWindow(QMainWindow):
             if kind == "trash":
                 pool = notes
             else:
-                pool = self.lib.sorted_notes(state="active") + self.lib.sorted_notes(state="archived")
+                pool = self.lib.sorted_notes(state="active")
             notes = self.lib.search(self._search_buf, pool=pool)
             # 搜索结果也跟着当前的排序方式走，不然和列表其它时候不一致
             if self.sort_mode != "updated":
                 self.lib.sort_notes(notes, self.sort_mode)
             self.header_label.setText("搜索结果")
         self.header_label.setToolTip(title if not self._search_buf else self._search_buf)
+        # 「全部笔记」固定按时间，排序菜单在这里没有意义，置灰并说明
+        fixed = kind == "all"
+        self.btn_sort.setEnabled(not fixed)
+        self.btn_sort.setToolTip("全部笔记固定按最近更新排列；进主题后可切换排序" if fixed else "排序")
 
         self.note_list.blockSignals(True)
         self.note_list.setUpdatesEnabled(False)

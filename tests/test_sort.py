@@ -1,13 +1,16 @@
-"""列表排序：最近更新 / 最近创建 / 标题。"""
+"""列表排序：最近更新 / 最近创建 / 标题。
+
+规则：「全部笔记」永远按更新时间倒序（不受排序菜单影响）；
+排序菜单对主题视图（以及归档 / 回收站）生效。
+"""
 import shutil
 import sys
 import time
-from pathlib import Path
 
 sys.path.insert(0, ".")
 from PyQt5.QtWidgets import QApplication
 
-from timodesk.store import Library, parse_iso, to_iso
+from timodesk.store import Library
 from timodesk.ui.main_window import MainWindow
 from timodesk.ui.theme import app_qss
 
@@ -48,7 +51,16 @@ def titles():
     return out
 
 
-check("默认按更新时间", titles() == ["甲的正文", "乙的正文", "丙的正文"])
+# ---- 全部笔记：固定按时间 ----
+check("全部笔记按更新时间", titles() == ["甲的正文", "乙的正文", "丙的正文"])
+win.set_sort("title")
+check("全部笔记切排序后仍按时间", titles() == ["甲的正文", "乙的正文", "丙的正文"])
+
+# ---- 主题视图：排序菜单生效 ----
+win.set_sort("updated")
+win.view = ("topic", t.id)
+win._reload_notes()
+check("主题默认按更新时间", titles() == ["甲的正文", "乙的正文", "丙的正文"])
 win.set_sort("created")
 check("按创建时间（新的在前）", titles() == ["乙的正文", "甲的正文", "丙的正文"])
 win.set_sort("title")
@@ -56,20 +68,26 @@ check("按标题（拼音序：丙 bing < 甲 jia < 乙 yi）", titles() == ["�
 check("菜单勾选跟随", [a.data() for a in win.sort_menu.actions() if a.isChecked()] == ["title"])
 check("设置已保存", win.settings.get("sort_mode") == "title")
 
-# 重开窗口保持
+# ---- 重开窗口保持 ----
 win2 = MainWindow(lib)
 check("重开保持排序", win2.sort_mode == "title")
-check("重开列表顺序", titles() == ["丙的正文", "甲的正文", "乙的正文"])
+win2.view = ("topic", t.id)
+win2._reload_notes()
+check(
+    "重开主题列表顺序",
+    [
+        lib.notes[win2.note_list.item(i).data(256)].display_title(
+            lib.content(win2.note_list.item(i).data(256))
+        )
+        for i in range(win2.note_list.count())
+    ]
+    == ["丙的正文", "甲的正文", "乙的正文"],
+)
 
-# 置顶仍在最前
+# ---- 置顶仍在最前 ----
 lib.toggle_pin(ids["丙"])
 win._reload_notes()
 check("置顶优先", titles()[0] == "丙的正文")
-
-# 主题视图也遵循
-win.view = ("topic", t.id)
-win._reload_notes()
-check("主题内排序一致", titles() == ["丙的正文", "甲的正文", "乙的正文"])
 
 print(f"\n{ok}/{total} PASS")
 sys.exit(0 if ok == total else 1)
