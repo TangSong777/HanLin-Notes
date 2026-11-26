@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -43,7 +44,9 @@ def main() -> int:
             rc, out = 99, "超时"
         tail = [line.strip() for line in out.strip().splitlines() if line.strip()]
         last = tail[-1] if tail else "（无输出）"
-        ok = rc == 0 and "FAIL" not in last
+        # 只有「非零失败数」才算失败：「0 FAIL」「PASS」都不算
+        failed_mark = re.search(r"[1-9]\d*\s*(FAIL|failed|项失败)", last)
+        ok = rc == 0 and not failed_mark
         print(f"{'OK ' if ok else 'BAD'} {f.name:<26} {last}")
         if not ok:
             bad.append(f.name)

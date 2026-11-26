@@ -14,3 +14,15 @@
 - 字体：默认改**宋体**；`render._css()` 用 `C['font_text']`（原来硬编码雅黑，预览不跟随）；启动时先定字体再生成 QSS；切字体沿用各控件原字号；笔记卡片列表也跟随正文字体。
 - 新增 `diag.py`（排序/归档/回收站/字体四项体检，35 项全过）、`shot_default.py`；`tests/test_bulk.py` 每次重建临时库。
 - 59/59 测试通过。
+
+## 2026-11-26 — 全局撤销 / 重做（Ctrl+Z 能撤回排序、归档、回收站等操作）
+
+- 新增 `timodesk/undo.py`：`UndoStack` + `Command`，最多 60 步；只快照受影响的笔记/主题与正文，不整库拷贝；空操作（比如对话框里点了取消）不占格子。
+- `store.py` 新增 `Snapshot`、`Library.snapshot()`、`Library.restore()`；恢复时按 id 覆盖/重建/删除，正文用原子写回。
+- `main_window.py` 新增 `undoable()` 上下文管理器，把切换排序、主题排序、新建/重命名/删除/拖动主题、新建笔记、置顶、归档、删除到回收站、恢复、彻底删除、复制、颜色、移动、清空回收站、整理已删除主题全部纳入撤销栈。
+- 快捷键：`Ctrl+Z` 撤销、`Ctrl+Shift+Z` / `Ctrl+Y` 重做；文本框内仍由控件自己撤销文字（QShortcut 不抢编辑快捷键）。
+- 数据与设置菜单顶部新增「撤销 <上一步>」「重做」，菜单弹出时刷新文案与可用状态。
+- 修掉一个崩溃：早前用 `QApplication.installEventFilter` 接管快捷键，窗口销毁后 Qt 仍持有过滤器，进程退出时 `0xC0000005` 访问违例（`tests/test_window.py`、`test_view_restore.py` 显示 PASS 但退出码非 0）。改用 QShortcut。
+- `tests/run_all.py` 的判定改为「非零失败数才算失败」，之前 `30 ok / 0 FAIL` 被误判成失败。
+- 新增 `tests/test_undo.py`（34 项，含真实按键：编辑器里 Ctrl+Z 只撤文字、列表焦点下 Ctrl+Z 撤排序）。
+- 60/60 测试通过。

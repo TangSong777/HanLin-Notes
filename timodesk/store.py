@@ -286,6 +286,19 @@ class Note:
         return "（空白笔记）"
 
 
+@dataclass
+class Snapshot:
+    """某一刻若干对象的样子，给撤销栈回滚用。
+
+    只装「受这次操作影响」的对象，不是整库拷贝：一次置顶只记那条笔记，
+    一次清空回收站才记几十条。
+    """
+
+    notes: dict[str, dict] = field(default_factory=dict)
+    topics: dict[str, dict] = field(default_factory=dict)
+    contents: dict[str, str] = field(default_factory=dict)
+
+
 class Library:
     """一个本地库：目录 + library.json + notes/ + attachments/。"""
 
@@ -376,6 +389,67 @@ class Library:
         tmp = self.json_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
         _replace_retry(tmp, self.json_path)
+
+    # ---------- 撤销用的快照 ----------
+    def snapshot(self, note_ids=(), topic_ids=()) -> Snapshot:
+        """抓一份「这些对象现在长什么样」，撤销时按它回滚。"""
+        snap = Snapshot()
+        for nid in note_ids:
+            note = self.notes.get(nid)
+            if note is None:
+                continue
+            snap.notes[nid] = note.to_json()
+            snap.contents[nid] = self.content(nid)
+        for tid in topic_ids:
+            topic = self.topics.get(tid)
+            if topic is not None:
+                snap.topics[tid] = topic.to_json()
+        return snap
+
+    def restore(self, snap: Snapshot, note_ids=(), topic_ids=()) -> None:
+        """把 snap 里的对象写回去；在 scope 内但快照里没有的，说明当时还不存在 → 删掉。"""
+        for tid in topic_ids:
+            data = snap.topics.get(tid)
+            if data is None:
+                self.topics.pop(tid, None)
+                continue
+            data = dict(data)
+            topic = self.topics.get(tid)
+            if topic is None:
+                self.topics[tid] = Topic(**data)
+            else:
+                for key, value in data.items():
+                    setattr(topic, key, value)
+        for nid in note_ids:
+            data = snap.notes.get(nid)
+            if data is None:
+                self.notes.pop(nid, None)
+                self._content.pop(nid, None)
+                path = self.note_path(nid)
+                if path.exists():
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+                continue
+            data = dict(data)
+            note = self.notes.get(nid)
+            if note is None:
+                self.notes[nid] = Note(**data)
+            else:
+                for key, value in data.items():
+                    setattr(note, key, value)
+            if nid in snap.contents:
+                body = snap.contents[nid]
+                self._content[nid] = body
+                path = self.note_path(nid)
+                tmp = path.with_suffix(".md.tmp")
+                try:
+                    tmp.write_text(body, encoding="utf-8")
+                    _replace_retry(tmp, path)
+                except OSError:
+                    pass
+        self.save()
 
     # ---------- 查询 ----------
     def content(self, note_id: str) -> str:
