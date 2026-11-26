@@ -1,77 +1,59 @@
 # HanLin-Notes
 
-<img src="assets/hanlin-notes.png" width="72" height="72" alt="HanLin-Notes 的「记」字图标">
+<img src="docs/icon.png" width="72" height="72" alt="HanLin-Notes 的「记」字图标">
 
 一个 Windows 本地笔记软件：**数据全在本机，不需要账号，不联网**。
 
-HanLin-Notes 是独立开发的桌面软件。数据格式和部分交互沿用 Android 应用 [Timo笔记](https://timo.idik.net/) 的思路。可直接导入 Timo 的可读数据 ZIP，在电脑上整理后再导出回手机。桌面界面采用 HanLin 系列的暖白、珊瑚红配色，并提供深色模式。
+HanLin-Notes 是独立开发的桌面软件。数据格式和部分交互沿用 Android 应用 [Timo笔记](https://timo.idik.net/) 的思路。可直接导入 Timo 的可读数据 ZIP，在电脑上整理后再导出回手机。桌面界面采用 HanLin 系列的暖白、珊瑚红配色，并提供深色模式。[HanLin 系列设计规范](docs/HANLIN-SERIES.md)
 
 ![笔记库网格](docs/screenshot-main.png)
 
 ![文档页的 Markdown 分屏](docs/screenshot-editor.png)
 
-在「数据与设置 → 设置 → 外观」可切换浅色、深色或跟随系统。也可用 `Ctrl+,` 进入设置。 [HanLin 系列设计规范](docs/HANLIN-SERIES.md)
+在「数据与设置 → 设置 → 外观」可切换浅色、深色或跟随系统。也可用 `Ctrl+,` 进入设置。
 
 ![深色模式](docs/screenshot-dark.png)
 
 > 与 Timo 官方无关，也不包含、不分发 Timo 的应用本体。本仓库只处理用户自己导出的数据。
 
-## 下载
+| | |
+| --- | --- |
+| 版本 | `0.6.0` |
+| 运行环境 | Windows 10 / 11 64 位 |
+| 发布产物 | `HanLinNotes-<版本>.exe`（Release 资产），本地构建输出 `HanLin-Notes-Setup-<版本>.exe` |
+| 许可证 | MIT |
 
-在 [Releases](../../releases/latest) 下载 Windows EXE 安装包。版本包可为 `HanLinNotes-<版本>.exe`，本地构建输出为 `HanLin-Notes-Setup-<版本>.exe`。
+## 目录
+
+**按意图查找**
+
+| 我想… | 看这里 |
+| --- | --- |
+| 装上并开始记 | [快速开始](#快速开始) → [安装](#安装) |
+| 从手机搬家 | [使用 · 第一次打开](#第一次打开) |
+| 知道能记什么 | [功能](#功能) |
+| 看界面和深色模式 | [功能 · 界面](#界面) |
+| 备份、换电脑 | [使用 · 搬家与备份](#搬家--备份) |
+| 数据存在哪 | [项目结构](#项目结构) |
+| 自己编译 | [构建与测试](#构建与测试) |
+| 发版 | [版本与发布](#版本与发布) |
+| 确认某个行为是不是 bug | [已知限制](#已知限制) |
+
+**全部章节**
+
+使用向：[快速开始](#快速开始) · [安装](#安装) · [使用](#使用) · [功能](#功能) · [已知限制](#已知限制)
+
+开发向：[构建与测试](#构建与测试) · [项目结构](#项目结构) · [版本与发布](#版本与发布)
+
+其它：[致谢与许可](#致谢与许可)
+
+## 快速开始
+
+1. 在 [Releases](../../releases/latest) 下载 `HanLinNotes-<版本>.exe`。
+2. 双击安装包，选择安装位置并确认，完成页可选择打开应用。
+3. 双击 `HanLin-Notes.exe` 启动；第一次打开可导入手机上的 Timo ZIP，也可以从空白开始。
 
 要求：Windows 10 / 11 64 位。
-
-## 怎么用
-
-### 1. 安装
-
-双击安装包后点击「下一步」，选好安装位置并确认，完成页可选择打开应用。默认安装到 `%LOCALAPPDATA%\Programs\HanLin\HanLin-Notes`。升级已有便携版时，选择原来的程序文件夹便可接着使用原有笔记。
-
-程序文件夹可直接启动，也可从开始菜单打开：
-
-```
-HanLin-Notes/
-├── HanLin-Notes.exe   ← 双击这个启动
-├── _internal/             ← 运行需要的 Qt 等 dll，别删
-└── Data/                  ← 你的笔记数据
-```
-
-安装作用于当前 Windows 用户。可以从 Windows「设置 → 应用」卸载，程序旁的笔记数据保留在原文件夹。
-
-### 2. 第一次打开
-
-双击 `HanLin-Notes.exe`，会问你要不要导入手机上的数据：
-
-1. 打开手机上的 Timo笔记 → 设置 → 导出可读副本，得到 `Timo_Export_xxxx.zip`；
-2. 在欢迎页点 **导入 Timo ZIP**，选中那个 ZIP；
-3. 等几秒，主题、笔记、图片、账号就都进来了。
-
-也可以先从空白开始，再从左下角的「数据与设置 → 导入」导入。把 ZIP 拖到主窗口或 `HanLin-Notes.exe` 图标上也能导入。
-
-库里已经有笔记时，导入会问一句：
-
-- **合并导入**：保留现在的笔记，只把包里没有的新笔记加进来（正文不会被覆盖，适合手机又记了一些再导一次）；
-- **替换导入**：清空当前库整体替换，动手前会自动备份到 `Data/backup/`。
-
-### 3. 搬家 / 备份
-
-所有东西都在这个文件夹里：
-
-```
-Data/
-├── library.json      # 主题与笔记元数据
-├── notes/*.md        # 每条笔记的正文（Markdown）
-└── attachments/      # 图片等附件原件
-```
-
-要换电脑或备份，可以直接复制整个 `HanLin-Notes` 文件夹。要在手机上继续用，可以从「数据与设置 → 导出 → Timo ZIP」生成 ZIP，再导回手机。
-
-### 4. 托盘
-
-- 点窗口右上角的 **✕** 不会退出，而是收进系统托盘（右下角时间旁边）；
-- **单击托盘图标** 重新打开窗口；
-- **右键托盘图标**：打开 HanLin-Notes / 新建笔记 / 打开数据文件夹 / 退出。
 
 ## 功能
 
@@ -107,7 +89,58 @@ Data/
 
 ![归档主题视图](docs/screenshot-archived.png)
 
-## 已知说明
+## 安装
+
+安装作用于当前 Windows 用户，默认安装到 `%LOCALAPPDATA%\Programs\HanLin\HanLin-Notes`。升级已有便携版时，选择原来的程序文件夹便可接着使用原有笔记。
+
+程序文件夹可直接启动，也可从开始菜单打开：
+
+```
+HanLin-Notes/
+├── HanLin-Notes.exe   ← 双击这个启动
+├── _internal/         ← 运行需要的 Qt 等 dll，别删
+└── Data/              ← 你的笔记数据
+```
+
+可以从 Windows「设置 → 应用」卸载，程序旁的笔记数据保留在原文件夹。
+
+## 使用
+
+### 第一次打开
+
+双击 `HanLin-Notes.exe`，会问你要不要导入手机上的数据：
+
+1. 打开手机上的 Timo笔记 → 设置 → 导出可读副本，得到 `Timo_Export_xxxx.zip`；
+2. 在欢迎页点 **导入 Timo ZIP**，选中那个 ZIP；
+3. 等几秒，主题、笔记、图片、账号就都进来了。
+
+也可以先从空白开始，再从左下角的「数据与设置 → 导入」导入。把 ZIP 拖到主窗口或 `HanLin-Notes.exe` 图标上也能导入。
+
+库里已经有笔记时，导入会问一句：
+
+- **合并导入**：保留现在的笔记，只把包里没有的新笔记加进来（正文不会被覆盖，适合手机又记了一些再导一次）；
+- **替换导入**：清空当前库整体替换，动手前会自动备份到 `Data/backup/`。
+
+### 搬家 / 备份
+
+所有东西都在这个文件夹里：
+
+```
+Data/
+├── library.json      # 主题与笔记元数据
+├── notes/*.md        # 每条笔记的正文（Markdown）
+└── attachments/      # 图片等附件原件
+```
+
+要换电脑或备份，可以直接复制整个 `HanLin-Notes` 文件夹。要在手机上继续用，可以从「数据与设置 → 导出 → Timo ZIP」生成 ZIP，再导回手机。
+
+### 托盘
+
+- 点窗口右上角的 **✕** 不会退出，而是收进系统托盘（右下角时间旁边）；
+- **单击托盘图标** 重新打开窗口；
+- **右键托盘图标**：打开 HanLin-Notes / 新建笔记 / 打开数据文件夹 / 退出。
+
+## 已知限制
 
 - 密码以明文保存在 `library.json`（与 Timo 导出的 `accounts.csv` 一致）。程序不加密、不联网，别把数据目录发给别人。
 - 回收站默认关闭自动清理。在「设置 → 数据」可选择清理周期。
@@ -115,7 +148,7 @@ Data/
 - 首次导入 1000 条笔记约需 5 秒。
 - 如果把程序放在 U 盘里用，`Data/` 会跟着 U 盘走；U 盘拔掉前先退出程序。
 
-## 从源码运行
+## 构建与测试
 
 ```bat
 pip install PyQt5 markdown
@@ -135,11 +168,35 @@ python tools/make-portable.py --dist <输出目录> --work <构建目录>
 - `dist/HanLin-Notes/HanLin-Notes.exe` 为程序目录里的启动文件。
 - `dist/HanLin-Notes-Setup-<版本>.exe` 为系列 Windows 安装包。
 
-## 开发
+测试：
+
+```bat
+python tests/run_all.py
+```
+
+## 项目结构
+
+```
+timodesk/          程序代码
+  app.py           入口与数据目录定位
+  store.py         笔记库读写
+  importer.py      Timo ZIP 导入
+  exporter.py      Markdown / PDF 导出
+  backup.py        自动备份
+  settings.py      设置读写
+  ui/              Qt 界面（主窗口、编辑器、主题、托盘）
+docs/              设计规范、截图、交接文档
+installer/         Inno Setup 安装脚本与共用向导
+tools/             打包、发布、图标脚本
+tests/             测试与合成样例
+```
+
+## 版本与发布
 
 - 分支模型：`snapshot` 是日常工作分支，`master` 只接受 `git merge --ff-only snapshot`，发版时打 tag 并发布 Release。
 - 每次改动追加一条到 `PENDING-CHANGES.md`，发版时汇总进 `CHANGELOG.md`。
+- 当前版本 `0.6.0`，版本历史见 [CHANGELOG.md](CHANGELOG.md)。
 
-## 许可
+## 致谢与许可
 
 [MIT](LICENSE)
