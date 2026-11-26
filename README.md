@@ -168,6 +168,8 @@ python tools/make-portable.py --dist <输出目录> --work <构建目录>
 
 不传 `--dist`/`--work` 时默认用仓库下的 `dist/` 与 `build/`。`tools/make-release.py <版本>` 只从默认的 `dist/` 取安装包整理发布资产，所以用自定义输出目录时，要把它复制回 `dist/` 再生成 `SHA256SUMS.txt`。
 
+打包完成后脚本会**自动把程序文件同步到桌面上的 `HanLin-Notes`**（路径从注册表的桌面位置读，`Data/` 一律不动），所以平时跑这一条命令，桌面上那份就是最新的。目标位置可用 `--desktop <目录>` 指定，`--no-sync` 则只打包不同步。
+
 产物：
 
 - `dist/HanLin-Notes/HanLin-Notes.exe` 为程序目录里的启动文件。

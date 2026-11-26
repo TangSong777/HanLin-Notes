@@ -6,6 +6,11 @@
 
 当前稳定版本：**1.0.0**
 
+## 2026-11-26 — 打包后自动同步到桌面
+
+- `tools/make-portable.py` 打完包自动把程序文件覆盖到桌面上的 `HanLin-Notes`（`Data/` 与 `backup/` 一律不动），路径从注册表的桌面位置读，可用 `--desktop` 覆盖、`--no-sync` 关闭。
+- 程序正在运行时只提示「先退出程序」，不中断退出码。
+
 ## 2026-11-26 — 动效统一
 
 - 新增 `timodesk/ui/motion.py`：时长常量（FAST 130 / BASE 190 / SLOW 240）、`enabled()`（读 Windows「显示动画」开关）、`mix()`、`fade_in()`、`HoverTracker`。

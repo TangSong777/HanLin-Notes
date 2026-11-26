@@ -1,8 +1,12 @@
 """构建可独立运行的程序目录，以及 HanLin 系列 Windows 安装包。
 
 用法：
-    python tools/make-portable.py            # 全部重打
+    python tools/make-portable.py            # 全部重打，并同步到桌面上的日常使用目录
     python tools/make-portable.py --skip-main  # 复用 dist/HanLin-Notes
+    python tools/make-portable.py --no-sync    # 只打包，不覆盖日常使用目录
+
+打完会自动把程序文件覆盖到「桌面/HanLin-Notes」（用户数据 Data/ 保持不动），
+所以平时只要跑这一条命令，桌面上的那份就是最新的。
 """
 from __future__ import annotations
 
@@ -135,12 +139,65 @@ def build_setup(dist: Path, app_dir: Path, iscc: Path) -> None:
     print(f"\n完成：{exe}  ({mb:.1f} MB)   版本 {version()}")
 
 
+def desktop_dir() -> Path:
+    """当前用户的桌面目录（可能被重定向到别的盘）。"""
+    if sys.platform == "win32":
+        import winreg
+
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+            ) as key:
+                value, _ = winreg.QueryValueEx(key, "Desktop")
+                if value:
+                    path = Path(os.path.expandvars(value))
+                    if path.is_dir():
+                        return path
+        except OSError:
+            pass
+    for name in ("Desktop", "桌面"):
+        path = Path.home() / name
+        if path.is_dir():
+            return path
+    return Path.home() / "Desktop"
+
+
+def sync_install(src: Path, dst: Path) -> tuple[int, str]:
+    """把构建好的程序目录覆盖到日常使用的位置，保留用户数据（Data/）。
+
+    返回（复制的文件数, 说明）。程序正在运行时 exe 会被占用，这里只提示、不中断。
+    """
+    copied = 0
+    try:
+        if not dst.is_dir():
+            shutil.copytree(src, dst)
+            for p in src.rglob("*"):
+                copied += 1 if p.is_file() else 0
+            return copied, f"已新建 {dst}"
+        for path in src.rglob("*"):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(src)
+            if rel.parts and rel.parts[0] == "Data":
+                continue  # 用户数据不动
+            out = dst / rel
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, out)
+            copied += 1
+    except PermissionError as exc:
+        return copied, f"{dst} 写入失败（{exc.filename} 可能正在运行），请先退出程序"
+    return copied, f"已同步到 {dst}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-main", action="store_true")
     parser.add_argument("--dist", type=Path, default=ROOT / "dist")
     parser.add_argument("--work", type=Path, default=ROOT / "build")
     parser.add_argument("--iscc", type=Path)
+    parser.add_argument("--desktop", type=Path, help="覆盖日常使用目录（默认读注册表里的桌面）")
+    parser.add_argument("--no-sync", action="store_true", help="不把新构建同步到日常使用目录")
     args = parser.parse_args()
     dist, work = args.dist.resolve(), args.work.resolve()
     app_dir = dist / "HanLin-Notes"
@@ -149,6 +206,10 @@ def main() -> int:
         work.mkdir(parents=True, exist_ok=True)
         build_main(dist, work, app_dir)
     build_setup(dist, app_dir, iscc)
+    if not args.no_sync:
+        target = (args.desktop or (desktop_dir() / "HanLin-Notes")).resolve()
+        count, note = sync_install(app_dir, target)
+        print(f"日常使用目录：{note}（{count} 个程序文件，Data/ 未改动）")
     return 0
 
 
