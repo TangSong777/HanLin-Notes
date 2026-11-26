@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         self.view = ("all", None)  # (kind, topic_id)
         self._pending_save = None
         self._search_buf = ""
-        self.setWindowTitle("HanLin-Notes")
+        self.setWindowTitle("寒淋笔记")
         self.resize(1280, 830)
         self.setMinimumSize(980, 620)
         self.tray = None
@@ -275,7 +275,7 @@ class MainWindow(QMainWindow):
             self._theme_group.addAction(action)
         menu.addAction("设置…", self.open_settings)
         menu.addSeparator()
-        menu.addAction("关于 HanLin-Notes", lambda: self.open_settings(3))
+        menu.addAction("关于寒淋笔记", lambda: self.open_settings(3))
         return menu
 
     def _build_library_page(self):
@@ -843,7 +843,7 @@ class MainWindow(QMainWindow):
             names += " 等"
         text = f"{len(due)} 条笔记到时间了：{names}"
         if self.tray is not None:
-            self.tray.showMessage("HanLin-Notes 提醒", text, QSystemTrayIcon.Information, 8000)
+            self.tray.showMessage("寒淋笔记 提醒", text, QSystemTrayIcon.Information, 8000)
         if self.isVisible():
             self._toast(text, 6000)
             QApplication.alert(self, 0)  # 任务栏图标闪烁，直到用户回到窗口
@@ -1725,7 +1725,7 @@ class MainWindow(QMainWindow):
             if not self._tray_hinted:
                 self._tray_hinted = True
                 self.tray.showMessage(
-                    "HanLin-Notes",
+                    "寒淋笔记",
                     "已收进托盘。点托盘图标可以重新打开，右键可以退出。",
                     QSystemTrayIcon.Information,
                     4000,

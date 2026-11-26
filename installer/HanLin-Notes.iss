@@ -1,4 +1,4 @@
-#define MyAppName "HanLin-Notes"
+#define MyAppName "寒淋笔记"
 #define SetupIntroZh "在本机整理笔记、文章和图片。升级便携版时，可以选择原来的程序文件夹。"
 #define SetupIntroEn "Organize notes, articles and images on this computer. To upgrade a portable copy, select its existing folder."
 
@@ -33,7 +33,7 @@ Source: "{#PayloadDir}\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreve
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\HanLin-Notes"; Filename: "{app}\HanLin-Notes.exe"; WorkingDir: "{app}"
+Name: "{group}\寒淋笔记"; Filename: "{app}\HanLin-Notes.exe"; WorkingDir: "{app}"
 
 [Run]
 Filename: "{app}\HanLin-Notes.exe"; WorkingDir: "{app}"; Description: "{cm:HanLinLaunch,{#MyAppName}}"; Flags: postinstall nowait skipifsilent

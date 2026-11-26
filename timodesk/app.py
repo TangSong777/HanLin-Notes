@@ -1,4 +1,4 @@
-"""HanLin-Notes 启动入口。"""
+"""寒淋笔记（HanLin-Notes）启动入口。"""
 from __future__ import annotations
 
 import os
@@ -28,7 +28,7 @@ from .ui.tray import TrayIcon
 
 from . import __version__
 
-APP_NAME = "HanLin-Notes"
+APP_NAME = "寒淋笔记"
 APP_VERSION = __version__
 
 
@@ -117,10 +117,10 @@ class WelcomeDialog(FramelessDialog):
     """首次启动：导入 Timo 导出包，或从空库开始。"""
 
     def __init__(self, parent=None):
-        super().__init__(parent, "欢迎使用 HanLin-Notes")
+        super().__init__(parent, "欢迎使用寒淋笔记")
         self.choice = "cancel"
         self.path: str | None = None
-        self.setWindowTitle("欢迎使用 HanLin-Notes")
+        self.setWindowTitle("欢迎使用寒淋笔记")
         self.setFixedSize(660, 398)
         split = QHBoxLayout(self.body)
         split.setContentsMargins(1, 0, 1, 1)

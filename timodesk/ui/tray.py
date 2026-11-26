@@ -15,10 +15,10 @@ class TrayIcon(QSystemTrayIcon):
     def __init__(self, window, parent=None):
         super().__init__(app_icon(), parent)
         self.window = window
-        self.setToolTip("HanLin-Notes · 本地笔记")
+        self.setToolTip("寒淋笔记 · 本地笔记")
 
         menu = QMenu()
-        act_show = QAction("打开 HanLin-Notes", menu)
+        act_show = QAction("打开寒淋笔记", menu)
         act_show.triggered.connect(self.show_window)
         menu.addAction(act_show)
 
@@ -36,7 +36,7 @@ class TrayIcon(QSystemTrayIcon):
         menu.addAction(act_data)
         menu.addSeparator()
 
-        act_quit = QAction("退出 HanLin-Notes", menu)
+        act_quit = QAction("退出寒淋笔记", menu)
         act_quit.triggered.connect(self.quit_app)
         menu.addAction(act_quit)
 

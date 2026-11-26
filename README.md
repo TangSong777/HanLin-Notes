@@ -1,10 +1,10 @@
-# HanLin-Notes
+# 寒淋笔记 · HanLin-Notes
 
 <img src="docs/icon.png" width="72" height="72" alt="HanLin-Notes 的「记」字图标">
 
 一个 Windows 本地笔记软件：**数据全在本机，不需要账号，不联网**。
 
-HanLin-Notes 是独立开发的桌面软件。数据格式和部分交互沿用 Android 应用 [Timo笔记](https://timo.idik.net/) 的思路。可直接导入 Timo 的可读数据 ZIP，在电脑上整理后再导出回手机。桌面界面采用 HanLin 系列的暖白、珊瑚红配色，并提供深色模式。[HanLin 系列设计规范](docs/HANLIN-SERIES.md)
+寒淋笔记（HanLin-Notes）是独立开发的桌面软件。数据格式和部分交互沿用 Android 应用 [Timo笔记](https://timo.idik.net/) 的思路。可直接导入 Timo 的可读数据 ZIP，在电脑上整理后再导出回手机。桌面界面采用 HanLin 系列的暖白、珊瑚红配色，并提供深色模式。[HanLin 系列设计规范](docs/HANLIN-SERIES.md)
 
 ![笔记库网格](docs/screenshot-main.png)
 
@@ -18,7 +18,7 @@ HanLin-Notes 是独立开发的桌面软件。数据格式和部分交互沿用 
 
 | | |
 | --- | --- |
-| 版本 | `0.6.0` |
+| 版本 | `1.0.0` |
 | 运行环境 | Windows 10 / 11 64 位 |
 | 发布产物 | `HanLinNotes-<版本>.exe`（Release 资产），本地构建输出 `HanLin-Notes-Setup-<版本>.exe` |
 | 许可证 | MIT |
@@ -195,7 +195,7 @@ tests/             测试与合成样例
 
 - 分支模型：`snapshot` 是日常工作分支，`master` 只接受 `git merge --ff-only snapshot`，发版时打 tag 并发布 Release。
 - 每次改动追加一条到 `PENDING-CHANGES.md`，发版时汇总进 `CHANGELOG.md`。
-- 当前版本 `0.6.0`，版本历史见 [CHANGELOG.md](CHANGELOG.md)。
+- 当前版本 `1.0.0`，版本历史见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 致谢与许可
 

@@ -409,7 +409,7 @@ class SettingsDialog(FramelessDialog):
         from PyQt5.QtCore import QSize
         from PyQt5.QtWidgets import QComboBox, QScrollArea, QSpinBox, QTabWidget, QWidget
 
-        self.setWindowTitle("HanLin-Notes · 设置")
+        self.setWindowTitle("寒淋笔记 · 设置")
         self.setWindowIcon(app_icon())
         self._bar.setObjectName("SeriesSettingsTitleBar")
         self._bar.setFixedHeight(46)
@@ -510,7 +510,7 @@ class SettingsDialog(FramelessDialog):
 
         from .. import __version__
 
-        about.addWidget(QLabel("HanLin-Notes", objectName="AboutTitle"))
+        about.addWidget(QLabel("寒淋笔记", objectName="AboutTitle"))
         about.addWidget(QLabel(f"版本 {__version__}", objectName="FieldLabel"))
         if parent is not None:
             details = _button("快捷键与库统计…")
@@ -637,7 +637,7 @@ class AboutDialog(FramelessDialog):
         lay.setContentsMargins(32, 24, 32, 22)
         lay.setSpacing(10)
 
-        title = QLabel("HanLin-Notes", objectName="AboutTitle")
+        title = QLabel("寒淋笔记", objectName="AboutTitle")
         lay.addWidget(title)
 
         sub = QLabel(f"版本 {version} · Windows 本地笔记，数据只在自己电脑上", objectName="FieldLabel")

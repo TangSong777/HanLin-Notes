@@ -77,7 +77,7 @@ def _links(text: str) -> list[str]:
 
 def _readme(counts: dict) -> str:
     return (
-        "HanLin-Notes · 本地数据导出\n\n"
+        "寒淋笔记 · 本地数据导出\n\n"
         "此 ZIP 未加密，包含笔记正文与附件，请妥善保管。\n"
         "content 目录是可直接阅读的 Markdown / CSV 文件，data 目录是机器可读 JSON。\n\n"
         f"导出内容：{counts['topics']} 个主题、{counts['documents']} 条笔记、{counts['attachments']} 个附件\n"
@@ -409,7 +409,7 @@ def export_markdown_tree(lib: Library, out: str | Path, progress=None) -> dict:
 
     counts["topics"] = len(dir_of)
     readme = (
-        "# HanLin-Notes 导出\n\n"
+        "# 寒淋笔记 导出\n\n"
         f"导出时间：{now_iso()}\n\n"
         f"- 主题 {counts['topics']} 个\n- 笔记 {counts['notes']} 条\n- 图片 {counts['attachments']} 张\n"
         + (
