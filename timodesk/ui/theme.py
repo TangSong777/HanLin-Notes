@@ -12,15 +12,16 @@ LIGHT = {
     "card": "#fffcf9",
     "card_soft": "#fbf6f1",
     "card_hover": "#fdf5f2",
-    "card_border": "#eadfd7",
+    "card_border": "#e2dfdd",
     "card_border_strong": "#dcccc2",
-    "ink": "#292424",
+    "header": "#fae8e6",
+    "ink": "#3c3c3c",
     "font_text": "Microsoft YaHei",
     "ink_soft": "#514541",
     "muted": "#736460",
     "faint": "#8f7c76",
     "on_ink": "#fffcf9",
-    "line": "#eadfd7",
+    "line": "#f1efec",
     "line_soft": "#f1e8e1",
     "input_bg": "#f4efea",
     "hover_bg": "#f9e0de",
@@ -30,10 +31,10 @@ LIGHT = {
     "hl_bg": "#f4d9d4",
     "accent": "#e48887",
     "accent_text": "#93444d",
-    "accent_hover": "#93444d",
-    "accent_pressed": "#773440",
-    "on_accent": "#292424",
-    "on_accent_hover": "#fffcf9",
+    "accent_hover": "#d58180",
+    "accent_pressed": "#cc7d7c",
+    "on_accent": "#000000",
+    "on_accent_hover": "#000000",
     "scroll": "#dcccc2",
     "scroll_hover": "#ba9f94",
     "danger": "#b4302a",
@@ -49,6 +50,7 @@ DARK = {
     "card_hover": "#2d2521",
     "card_border": "#332b27",
     "card_border_strong": "#4a3c36",
+    "header": "#422e2a",
     "ink": "#f2eae4",
     "font_text": "Microsoft YaHei",
     "ink_soft": "#d5c6be",
@@ -276,6 +278,13 @@ QLabel#TitleBrand {{ color: {C['ink']}; font-size: {int(16 * s)}px; }}
     border-top-left-radius: 12px; border-top-right-radius: 12px;
 }}
 QLabel#DialogTitle {{ color: {C['ink']}; font-size: {int(15 * s)}px; }}
+#SeriesSettingsTitleBar {{
+    background: qlineargradient(x1: 0, y1:0, x2:0.18, y2:1,
+        stop:0 {C['header']}, stop:0.33 {C['card']}, stop:1 {C['card']});
+    border-bottom: 1px solid {C['line']};
+    border-top-left-radius: 10px; border-top-right-radius: 10px;
+}}
+#SeriesSettingsTitleBar QLabel#DialogTitle {{ font-size: {int(18 * s)}px; }}
 QLabel#WelcomeTitle {{ font-size: {int(30 * s)}px; }}
 QLabel#SetupTitle {{ font-size: {int(26 * s)}px; }}
 QLabel#AboutTitle {{ font-size: {int(19 * s)}px; }}
@@ -465,6 +474,9 @@ QPushButton:disabled, QPushButton#Primary:disabled, QPushButton#Danger:disabled,
 QToolButton:disabled {{
     color: {C['faint']}; border-color: {C['line']}; background: {C['paper_alt']};
 }}
+QPushButton:focus, QPushButton#Plain:focus, QPushButton#Primary:focus, QToolButton:focus {{
+    border: 1px solid {C['accent_text']};
+}}
 
 /* ---------- 滚动条 ---------- */
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 5px 2px; }}
@@ -494,6 +506,19 @@ QToolTip {{
 /* ---------- 对话框 ---------- */
 QDialog {{ background: {C['canvas']}; }}
 #DialogBody {{ background: {C['card']}; }}
+QTabWidget#SeriesSettingsTabs::pane {{ border: none; border-top: 1px solid {C['line']}; }}
+QTabWidget#SeriesSettingsTabs QTabBar::tab {{
+    background: transparent; border: 1px solid transparent; border-radius: 7px;
+    min-height: 30px; min-width: 48px; margin: 0 4px 5px 0; padding: 0 12px;
+    color: {C['ink']};
+}}
+QTabWidget#SeriesSettingsTabs QTabBar::tab:hover {{ background: {C['hover_bg']}; }}
+QTabWidget#SeriesSettingsTabs QTabBar::tab:selected {{
+    background: {C['checked_bg']}; color: {C['accent_text']};
+}}
+QTabWidget#SeriesSettingsTabs QTabBar::tab:selected:focus {{ border-color: {C['accent_text']}; }}
+#SeriesSettingsScroll, #SeriesSettingsPage {{ background: {C['card']}; }}
+QLabel#SeriesSettingsError {{ color: {C['accent_text']}; }}
 QLineEdit#PathBox {{ padding: 9px 11px; }}
 QLabel#ImportSummary {{ font-size: {int(15 * s)}px; font-weight: 600; }}
 QLabel#LibraryStats {{
@@ -521,6 +546,7 @@ QProgressBar::chunk {{ background: {C['accent']}; border-radius: 3px; }}
 QComboBox {{
     background: {C['card']}; border: 1px solid {C['card_border_strong']}; border-radius: 5px; padding: 6px 10px;
 }}
+QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 26px; border: none; }}
 QComboBox:focus, QSpinBox:focus {{ border-color: {C['accent_text']}; }}
 QComboBox QAbstractItemView {{
     background: {C['card']}; border: 1px solid {C['card_border']}; selection-background-color: {C['checked_bg']};

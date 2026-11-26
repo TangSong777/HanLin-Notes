@@ -13,7 +13,7 @@
 ## 2. 技术栈与目录
 
 - Python 3.12 + PyQt5（不用 Qt6，环境里只有 PyQt5）
-- 打包：PyInstaller（onedir 主程序 + onefile 自解压安装包）
+- 打包：PyInstaller onedir 主程序与 Inno Setup 安装向导。 [系列设计规范](HANLIN-SERIES.md)
 - 仓库：`https://github.com/TangSong777/HanLin-Notes`（原 `Timo-For-Windows`）
 
 ```text
@@ -98,7 +98,7 @@ tools/              打包、发布、截图脚本
 2. **不要删功能**。重构前后功能表要一一对应。
 3. **测试必须全绿**：`python tests/run_all.py`，59 个脚本。UI 改动若导致断言里的颜色值变化，改断言而不是改行为。
 4. **分支纪律**：日常提交只推 `snapshot` 分支；`master` 只在发版时 `git merge --ff-only snapshot`。发版流程见 `C:\Users\<用户名>\.dsh\skills\timo-release-discipline\SKILL.md`（仓库改名后 skill 里的坐标要同步更新）。
-5. **打包**：`python tools/make-portable.py` 生成 `dist/HanLin-Notes 安装包.exe`（改名后同步改脚本里的名字）。
+5. **打包**：`python tools/make-portable.py` 生成 `dist/HanLin-Notes-Setup-<版本>.exe`。
 6. 改完 UI 要**截图核对**：`python tools/shot-docs.py` 生成 `docs/screenshot-main.png` 等，浅色与深色各一张。
 
 ## 6. 验收

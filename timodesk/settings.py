@@ -34,8 +34,18 @@ class Settings:
         return self.data.get(key, default)
 
     def set(self, key: str, value) -> None:
-        self.data[key] = value
-        self.save()
+        self.update({key: value})
+
+    def update(self, values: dict) -> None:
+        change = self.data | values
+        if change == self.data:
+            return
+        original, self.data = self.data, change
+        try:
+            self.save()
+        except OSError:
+            self.data = original
+            raise
 
     def drop(self, key: str) -> None:
         if key in self.data:

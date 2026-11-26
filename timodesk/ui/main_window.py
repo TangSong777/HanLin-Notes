@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QTextBrowser,
     QActionGroup,
     QApplication,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -252,7 +253,7 @@ class MainWindow(QMainWindow):
         outgoing = menu.addMenu("导出")
         outgoing.addAction("Timo ZIP…", self.export_zip)
         outgoing.addAction("Markdown 文件夹…", self.export_md_tree)
-        menu.addAction("打开数据目录", self.open_data_dir)
+        menu.addAction("打开数据文件夹", self.open_data_dir)
         menu.addAction("备份与恢复…", self.backup_dialog)
         menu.addSeparator()
         maintenance = menu.addMenu("整理数据")
@@ -272,9 +273,9 @@ class MainWindow(QMainWindow):
             action.setData(key)
             action.triggered.connect(lambda _=False, k=key: self.set_theme(k))
             self._theme_group.addAction(action)
-        menu.addAction("偏好设置…", self.open_settings)
+        menu.addAction("设置…", self.open_settings)
         menu.addSeparator()
-        menu.addAction("关于 HanLin-Notes", self.show_about)
+        menu.addAction("关于 HanLin-Notes", lambda: self.open_settings(3))
         return menu
 
     def _build_library_page(self):
@@ -493,6 +494,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+S", self.save_now),
             ("Ctrl+E", self._toggle_preview),
             ("Ctrl+Shift+E", self._show_edit_mode),
+            ("Ctrl+,", self.open_settings),
             ("Alt+Left", lambda: self._show_library(focus=True)),
         ]:
             QShortcut(QKeySequence(seq), self, fn)
@@ -1397,7 +1399,7 @@ class MainWindow(QMainWindow):
         self.refresh_topics()
         self._toast("已锁定主题" if topic.locked else "已解除锁定")
 
-    def open_settings(self):
+    def open_settings(self, section_index=0):
         from .dialogs import SettingsDialog
 
         previous_font = self.settings.get("font_family", "Microsoft YaHei")
@@ -1406,11 +1408,10 @@ class MainWindow(QMainWindow):
             self.settings,
             self.settings.get("theme_mode", "light"),
             getattr(self, "sort_mode", "updated"),
+            section_index,
         )
-        try:
-            dlg.exec_()
-        finally:
-            dlg.apply()
+        if dlg.exec_() != QDialog.Accepted:
+            return
         if dlg.theme_changed:
             self.set_theme(self.settings.get("theme_mode", "light"))
         want_sort = dlg.cmb_sort.currentData()

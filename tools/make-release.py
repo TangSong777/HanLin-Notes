@@ -3,7 +3,7 @@
 用法：
     python tools/make-release.py 0.2.0
 
-前置：先跑 `python tools/make-portable.py` 打出 `dist/HanLin-Notes 安装包.exe`。
+前置：先跑 `python tools/make-portable.py` 打出 `dist/HanLin-Notes-Setup-<版本>.exe`。
 
 产物（dist/release/<版本>/）：
     HanLinNotes-<版本>.exe   ← 资产名用 ASCII，避免 GitHub 把中文替换成点
@@ -17,7 +17,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "dist" / "HanLin-Notes 安装包.exe"
 
 
 def asset_name(version: str) -> str:
@@ -46,8 +45,9 @@ def main() -> int:
     if version != project_version():
         print(f"版本号不一致：参数 {version}，timodesk/__init__.py 是 {project_version()}")
         return 1
-    if not SRC.exists():
-        print(f"找不到安装包：{SRC}\n先运行 python tools/make-portable.py")
+    source = ROOT / "dist" / f"HanLin-Notes-Setup-{version}.exe"
+    if not source.is_file():
+        print(f"找不到安装包：{source}\n先运行 python tools/make-portable.py")
         return 1
 
     out_dir = ROOT / "dist" / "release" / version
@@ -56,7 +56,7 @@ def main() -> int:
     target = out_dir / asset
     if target.exists():
         target.unlink()
-    shutil.copy2(SRC, target)
+    shutil.copy2(source, target)
 
     digest = sha256(target)
     (out_dir / "SHA256SUMS.txt").write_text(

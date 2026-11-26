@@ -56,6 +56,13 @@ dlg2 = SettingsDialog(None, st, "light", "created")
 dlg2.cmb_theme.setCurrentIndex(dlg2.cmb_theme.findData("light"))
 check("没改主题不算变更", dlg2.theme_changed is False)
 
+before = st.path.read_bytes()
+dlg2.cmb_theme.setCurrentIndex(dlg2.cmb_theme.findData("dark"))
+dlg2.cmb_sort.setCurrentIndex(dlg2.cmb_sort.findData("title"))
+dlg2.spin_trash.setValue(3)
+dlg2.reject()
+check("取消不写入颜色、排序或清理周期", st.path.read_bytes() == before and st.get("theme_mode") == "light")
+
 w = MainWindow(lib)
 w.settings.set("sort_mode", "updated")
 check("主窗口能打开设置", hasattr(w, "open_settings"))

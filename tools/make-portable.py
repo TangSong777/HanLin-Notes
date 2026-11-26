@@ -1,4 +1,4 @@
-"""打便携版：主程序 → payload.zip → 单文件安装器。
+"""构建可独立运行的程序目录，以及 HanLin 系列 Windows 安装包。
 
 用法：
     python tools/make-portable.py            # 全部重打
@@ -6,20 +6,16 @@
 """
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
+import stat
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DIST = ROOT / "dist"
-BUILD = ROOT / "build"
-APP_DIR = DIST / "HanLin-Notes"
-PAYLOAD = BUILD / "payload.zip"
-SETUP_NAME = "HanLin-Notes 安装包"
-ICON = "assets/hanlin-notes.ico"
+ICON = ROOT / "assets" / "hanlin-notes.ico"
 
 EXCLUDES = [
     "tkinter",
@@ -69,29 +65,36 @@ def pyinstaller(*args: str) -> None:
     subprocess.run(cmd, cwd=ROOT, env=env, check=True)
 
 
-def build_main() -> None:
-    print("[1/3] 打包主程序…")
+def build_main(dist: Path, work: Path, app_dir: Path) -> None:
+    print("[1/2] 打包主程序…")
+    if app_dir.exists():
+        # PyInstaller replaces the named output directory.
+        if app_dir.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT or any(
+            item.name not in {"HanLin-Notes.exe", "_internal"} for item in app_dir.iterdir()
+        ):
+            raise SystemExit(f"输出目录含已有数据，请用 --dist 指定独立的构建目录：{app_dir}")
     args = [
+        "--distpath", str(dist), "--workpath", str(work), "--specpath", str(work),
         "--windowed",
         "--name",
         "HanLin-Notes",
         "--icon",
-        ICON,
+        str(ICON),
         "--add-data",
         f"{ICON};assets",
     ]
     for m in EXCLUDES:
         args += ["--exclude-module", m]
-    args.append("run.py")
+    args.append(str(ROOT / "run.py"))
     pyinstaller(*args)
-    if not (APP_DIR / "HanLin-Notes.exe").exists():
-        raise SystemExit("主程序没有打出来：" + str(APP_DIR))
-    prune()
+    if not (app_dir / "HanLin-Notes.exe").is_file():
+        raise SystemExit("主程序没有打出来：" + str(app_dir))
+    prune(app_dir)
 
 
-def prune() -> None:
+def prune(app_dir: Path) -> None:
     """删掉确定用不到的 Qt 运行库，减掉约 22 MB。"""
-    internal = APP_DIR / "_internal"
+    internal = app_dir / "_internal"
     saved = 0
     removed = []
     for name in PRUNE:
@@ -104,52 +107,48 @@ def prune() -> None:
         print(f"      裁剪 {len(removed)} 个 Qt 库，省 {saved / 1024 / 1024:.1f} MB")
 
 
-def build_payload() -> None:
-    print("[2/3] 压缩 payload…")
-    BUILD.mkdir(parents=True, exist_ok=True)
-    if PAYLOAD.exists():
-        PAYLOAD.unlink()
-    files = sorted(p for p in APP_DIR.rglob("*") if p.is_file())
-    with zipfile.ZipFile(PAYLOAD, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
-        zf.writestr(zipfile.ZipInfo("Data/"), "")
-        for p in files:
-            zf.write(p, p.relative_to(APP_DIR).as_posix())
-    mb = PAYLOAD.stat().st_size / 1024 / 1024
-    print(f"      {PAYLOAD.name}  {mb:.1f} MB  ({len(files)} 个文件)")
+def find_iscc() -> Path:
+    on_path = shutil.which("ISCC.exe")
+    if on_path:
+        return Path(on_path)
+    for base in (Path(os.environ["LOCALAPPDATA"]) / "Programs",
+                 Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")),
+                 Path(os.environ["ProgramFiles"])):
+        candidate = base / "Inno Setup 6" / "ISCC.exe"
+        if candidate.is_file():
+            return candidate
+    raise SystemExit("找不到 ISCC.exe，请使用 Inno Setup 6.6 或更新版本。")
 
 
-def build_setup() -> None:
-    print("[3/3] 打包安装器…")
-    args = [
-        "--onefile",
-        "--windowed",
-        "--name",
-        SETUP_NAME,
-        "--icon",
-        ICON,
-        "--add-data",
-        f"{ICON};assets",
-        "--add-data",
-        f"{PAYLOAD};.",
-    ]
-    for m in EXCLUDES:
-        args += ["--exclude-module", m]
-    args.append("installer.py")
-    pyinstaller(*args)
-    exe = DIST / f"{SETUP_NAME}.exe"
-    if not exe.exists():
-        raise SystemExit("安装器没有打出来：" + str(exe))
+def build_setup(dist: Path, app_dir: Path, iscc: Path) -> None:
+    print("[2/2] 编译 HanLin 安装向导…")
+    package_version = version()
+    subprocess.run(
+        [str(iscc), f"/DPayloadDir={app_dir}", f"/DMyAppVersion={package_version}",
+         f"/O{dist}", str(ROOT / "installer" / "HanLin-Notes.iss")],
+        cwd=ROOT, check=True,
+    )
+    exe = dist / f"HanLin-Notes-Setup-{package_version}.exe"
+    if not exe.is_file() or not exe.stat().st_size:
+        raise SystemExit(f"安装器没有打出来：{exe}")
     mb = exe.stat().st_size / 1024 / 1024
     print(f"\n完成：{exe}  ({mb:.1f} MB)   版本 {version()}")
 
 
 def main() -> int:
-    if "--skip-main" not in sys.argv:
-        if APP_DIR.exists():
-            shutil.rmtree(APP_DIR)
-        build_main()
-    build_payload()
-    build_setup()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--skip-main", action="store_true")
+    parser.add_argument("--dist", type=Path, default=ROOT / "dist")
+    parser.add_argument("--work", type=Path, default=ROOT / "build")
+    parser.add_argument("--iscc", type=Path)
+    args = parser.parse_args()
+    dist, work = args.dist.resolve(), args.work.resolve()
+    app_dir = dist / "HanLin-Notes"
+    iscc = args.iscc.resolve() if args.iscc else find_iscc()
+    if not args.skip_main:
+        work.mkdir(parents=True, exist_ok=True)
+        build_main(dist, work, app_dir)
+    build_setup(dist, app_dir, iscc)
     return 0
 
 

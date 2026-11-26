@@ -10,7 +10,7 @@ HanLin-Notes 是独立开发的桌面软件。数据格式和部分交互沿用 
 
 ![文档页的 Markdown 分屏](docs/screenshot-editor.png)
 
-在「数据与设置 → 外观」可切换浅色、深色或跟随系统。
+在「数据与设置 → 设置 → 外观」可切换浅色、深色或跟随系统。也可用 `Ctrl+,` 进入设置。 [HanLin 系列设计规范](docs/HANLIN-SERIES.md)
 
 ![深色模式](docs/screenshot-dark.png)
 
@@ -18,24 +18,17 @@ HanLin-Notes 是独立开发的桌面软件。数据格式和部分交互沿用 
 
 ## 下载
 
-安装包约 104 MB，解开后约 128 MB，双击就能用，不写注册表。
-**Release 里放的就是这个 `.exe`**：下载 → 双击 → 选位置 → 解压 → 自动打开并删掉安装包，之后用文件夹里的 `HanLin-Notes.exe`。
-
-到 [Releases](../../releases/latest) 下载 **`HanLin-Notes 安装包.exe`**。
+在 [Releases](../../releases/latest) 下载 Windows EXE 安装包。版本包可为 `HanLinNotes-<版本>.exe`，本地构建输出为 `HanLin-Notes-Setup-<版本>.exe`。
 
 要求：Windows 10 / 11 64 位。
 
-## 怎么用（便携版）
+## 怎么用
 
-### 1. 解包
+### 1. 安装
 
-双击下载的 `HanLin-Notes 安装包.exe`：
+双击安装包后点击「下一步」，选好安装位置并确认，完成页可选择打开应用。默认安装到 `%LOCALAPPDATA%\Programs\HanLin\HanLin-Notes`。升级已有便携版时，选择原来的程序文件夹便可接着使用原有笔记。
 
-1. 弹出小窗口，显示要解压到的位置，默认是安装包旁边新建的 `HanLin-Notes` 文件夹；
-2. 想换地方就点 **更改…** 选一个目录（会在里面再建一个 `HanLin-Notes`）；
-3. 点 **解压到这里**，等进度条走完。
-
-解压完成后：程序会自动打开，**安装包自己删除**，留下的就是一个可以直接用的文件夹：
+程序文件夹可直接启动，也可从开始菜单打开：
 
 ```
 HanLin-Notes/
@@ -44,9 +37,7 @@ HanLin-Notes/
 └── Data/                  ← 你的笔记数据
 ```
 
-整个过程不写注册表、不装服务、不出现命令行黑框。
-
-> **第一次运行会被 Windows 拦一下。** 这个安装包没有买代码签名证书，Windows SmartScreen 会提示「Windows 已保护你的电脑」——点 **更多信息** → **仍要运行** 就行。少数杀毒软件也会对「自己解压自己」的安装包报警，可以把它加进白名单。
+安装作用于当前 Windows 用户。可以从 Windows「设置 → 应用」卸载，程序旁的笔记数据保留在原文件夹。
 
 ### 2. 第一次打开
 
@@ -119,7 +110,7 @@ Data/
 ## 已知说明
 
 - 密码以明文保存在 `library.json`（与 Timo 导出的 `accounts.csv` 一致）。程序不加密、不联网，别把数据目录发给别人。
-- 回收站默认**不会**自动清理。需要的话在数据菜单 →「偏好设置…」里把天数设上（0 = 不清理）。
+- 回收站默认关闭自动清理。在「设置 → 数据」可选择清理周期。
 - 手机端的云同步、桌面小组件没有移植；提醒是本地功能，Timo 导出包不带提醒字段，所以**导出回手机时提醒会丢**，其余内容不受影响。
 - 首次导入 1000 条笔记约需 5 秒。
 - 如果把程序放在 U 盘里用，`Data/` 会跟着 U 盘走；U 盘拔掉前先退出程序。
@@ -131,16 +122,18 @@ pip install PyQt5 markdown
 python run.py
 ```
 
-打便携版（主程序 + 自解压安装包）：
+用 PyInstaller 和 Inno Setup 6.6 或更新版本构建程序目录与安装包：
 
 ```bat
-python tools/make-portable.py
+python tools/make-portable.py --dist <输出目录> --work <构建目录>
 ```
+
+不传 `--dist`/`--work` 时默认用仓库下的 `dist/` 与 `build/`。`tools/make-release.py <版本>` 只从默认的 `dist/` 取安装包整理发布资产，所以用自定义输出目录时，要把它复制回 `dist/` 再生成 `SHA256SUMS.txt`。
 
 产物：
 
-- `dist/HanLin-Notes/HanLin-Notes.exe` —— 解压后的程序本体
-- `dist/HanLin-Notes 安装包.exe` —— 用来分发的单文件安装包
+- `dist/HanLin-Notes/HanLin-Notes.exe` 为程序目录里的启动文件。
+- `dist/HanLin-Notes-Setup-<版本>.exe` 为系列 Windows 安装包。
 
 ## 开发
 

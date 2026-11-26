@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 
-from .title_bar import FramelessDialog
+from .title_bar import FramelessDialog, app_icon
 from .visuals import glyph
 
 
@@ -402,42 +402,57 @@ class BackupDialog(FramelessDialog):
 
 
 class SettingsDialog(FramelessDialog):
-    """偏好设置：外观、回收站自动清理、列表排序。改完立即生效。"""
+    """系列设置。字段留在对话框内，保存时一起写入。"""
 
-    def __init__(self, parent, settings, theme_mode: str, sort_mode: str):
-        super().__init__(parent, "偏好设置")
-        from PyQt5.QtWidgets import QComboBox, QHBoxLayout, QSpinBox
+    def __init__(self, parent, settings, theme_mode: str, sort_mode: str, section_index=0):
+        super().__init__(parent, "设置")
+        from PyQt5.QtCore import QSize
+        from PyQt5.QtWidgets import QComboBox, QScrollArea, QSpinBox, QTabWidget, QWidget
 
+        self.setWindowTitle("HanLin-Notes · 设置")
+        self.setWindowIcon(app_icon())
+        self._bar.setObjectName("SeriesSettingsTitleBar")
+        self._bar.setFixedHeight(46)
+        icon = QLabel()
+        icon.setPixmap(app_icon().pixmap(QSize(26, 26)))
+        self._bar.layout().insertWidget(0, icon)
         self.settings = settings
         self.theme_changed = False
         self._orig_theme = theme_mode or "light"
-        self.setFixedSize(600, 362)
+        work_area = parent.screen().availableGeometry() if parent else self.screen().availableGeometry()
+        self.setFixedSize(min(600, work_area.width() - 24), min(454, work_area.height() - 24))
 
         lay = QVBoxLayout(self.body)
-        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setContentsMargins(20, 12, 20, 14)
         lay.setSpacing(12)
-        sections = QHBoxLayout()
-        sections.setSpacing(12)
-        lay.addLayout(sections, 1)
+        tabs = QTabWidget(objectName="SeriesSettingsTabs")
+        tabs.tabBar().setExpanding(False)
+        tabs.setAccessibleName("设置分类")
+        lay.addWidget(tabs, 1)
 
         def section(title: str):
-            card = QFrame(objectName="SettingsGroup")
-            fields = QVBoxLayout(card)
-            fields.setContentsMargins(15, 13, 15, 14)
-            fields.setSpacing(7)
-            fields.addWidget(QLabel(title, objectName="FieldHeading"))
-            fields.addSpacing(4)
-            sections.addWidget(card, 1)
+            scroll = QScrollArea(objectName="SeriesSettingsScroll")
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setWidgetResizable(True)
+            page = QWidget(objectName="SeriesSettingsPage")
+            fields = QVBoxLayout(page)
+            fields.setContentsMargins(0, 16, 4, 8)
+            fields.setSpacing(8)
+            scroll.setWidget(page)
+            tabs.addTab(scroll, title)
             return fields
 
         def field(layout, label: str, widget) -> None:
             caption = QLabel(label, objectName="FieldLabel")
             caption.setBuddy(widget)
+            widget.setAccessibleName(label)
             layout.addWidget(caption)
             layout.addWidget(widget)
 
+        general = section("常规")
         appearance = section("外观")
-        organization = section("笔记")
+        data = section("数据")
+        about = section("关于")
 
         self.cmb_theme = QComboBox()
         for key, text in (("light", "浅色"), ("dark", "深色"), ("system", "跟随系统")):
@@ -457,45 +472,95 @@ class SettingsDialog(FramelessDialog):
         field(appearance, "正文字体", self.cmb_font)
         appearance.addStretch(1)
 
+        self.cmb_sort = QComboBox()
+        for key, text in (("updated", "最近更新"), ("created", "最近创建"), ("title", "标题")):
+            self.cmb_sort.addItem(text, key)
+        self.cmb_sort.setCurrentIndex(max(0, self.cmb_sort.findData(sort_mode or "updated")))
+        field(general, "默认排序", self.cmb_sort)
+        general.addStretch(1)
+
+        path = QLineEdit(str(settings.root.resolve()))
+        path.setReadOnly(True)
+        field(data, "数据文件夹", path)
+        if parent is not None:
+            data_actions = QHBoxLayout()
+            open_data = _button("打开数据文件夹")
+            open_data.clicked.connect(parent.open_data_dir)
+            data_actions.addWidget(open_data)
+            backups = _button("本地备份…")
+            backups.clicked.connect(parent.backup_dialog)
+            data_actions.addWidget(backups)
+            data_actions.addStretch(1)
+            data.addLayout(data_actions)
+
         self.spin_trash = QSpinBox()
         self.spin_trash.setRange(0, 3650)
         self.spin_trash.setValue(int(settings.get("trash_days", 0) or 0))
         self.spin_trash.setSuffix(" 天")
         self.spin_trash.setSpecialValueText("不自动清理")
-        self.cmb_sort = QComboBox()
-        for key, text in (("updated", "最近更新"), ("created", "最近创建"), ("title", "标题")):
-            self.cmb_sort.addItem(text, key)
-        self.cmb_sort.setCurrentIndex(max(0, self.cmb_sort.findData(sort_mode or "updated")))
-        field(organization, "默认排序", self.cmb_sort)
-        field(organization, "回收站清理周期", self.spin_trash)
+        field(data, "回收站清理周期", self.spin_trash)
 
         hint = QLabel(
             "设定天数后，程序启动时会永久删除超过该期限的回收站笔记。",
             objectName="FieldLabel",
         )
         hint.setWordWrap(True)
-        organization.addWidget(hint)
-        organization.addStretch(1)
+        data.addWidget(hint)
+        data.addStretch(1)
 
+        from .. import __version__
+
+        about.addWidget(QLabel("HanLin-Notes", objectName="AboutTitle"))
+        about.addWidget(QLabel(f"版本 {__version__}", objectName="FieldLabel"))
+        if parent is not None:
+            details = _button("快捷键与库统计…")
+            details.clicked.connect(parent.show_about)
+            about.addWidget(details, alignment=Qt.AlignLeft)
+        about.addStretch(1)
+
+        self.message = QLabel("", objectName="SeriesSettingsError")
+        self.message.setWordWrap(True)
+        self.message.hide()
+        lay.addWidget(self.message)
         btns = QHBoxLayout()
+        btns.setSpacing(8)
         btns.addStretch(1)
-        done = QPushButton("完成", objectName="Primary")
+        cancel = _button("取消")
+        cancel.setMinimumWidth(84)
+        cancel.setAutoDefault(False)
+        cancel.clicked.connect(self.reject)
+        btns.addWidget(cancel)
+        done = _button("保存", "Primary")
+        done.setMinimumWidth(84)
+        done.setDefault(True)
         done.clicked.connect(self.accept)
         btns.addWidget(done)
         lay.addLayout(btns)
 
         self.cmb_theme.currentIndexChanged.connect(self._on_theme)
+        tabs.setCurrentIndex(section_index)
+        tabs.tabBar().setFocus()
+        self.add_edge()
 
     def _on_theme(self, _idx: int) -> None:
         self.theme_changed = self.cmb_theme.currentData() != self._orig_theme
-        self.settings.set("theme_mode", self.cmb_theme.currentData())
 
     def apply(self) -> None:
-        """把当前控件值写进 settings（关闭时调用）。"""
-        self.settings.set("theme_mode", self.cmb_theme.currentData())
-        self.settings.set("font_family", self.cmb_font.currentData())
-        self.settings.set("trash_days", int(self.spin_trash.value()))
-        self.settings.set("sort_mode", self.cmb_sort.currentData())
+        self.settings.update({
+            "theme_mode": self.cmb_theme.currentData(),
+            "font_family": self.cmb_font.currentData(),
+            "trash_days": int(self.spin_trash.value()),
+            "sort_mode": self.cmb_sort.currentData(),
+        })
+
+    def accept(self) -> None:
+        try:
+            self.apply()
+        except OSError as exc:
+            self.message.setText(f"无法保存设置。请检查数据文件夹权限。\n{exc}")
+            self.message.show()
+            return
+        super().accept()
 
 
 class ImportModeDialog(FramelessDialog):
@@ -552,6 +617,7 @@ class AboutDialog(FramelessDialog):
         ("Ctrl+N", "新建笔记"),
         ("Ctrl+Shift+N", "新建主题"),
         ("Ctrl+F", "搜索全部笔记（光标在正文里则在本篇内查找）"),
+        ("Ctrl+,", "打开设置"),
         ("Ctrl+S", "立即保存"),
         ("Ctrl+E", "在分屏和阅读间切换"),
         ("Alt+←", "从文档返回笔记库"),

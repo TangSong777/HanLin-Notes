@@ -27,12 +27,16 @@ class TrayIcon(QSystemTrayIcon):
         menu.addAction(act_new)
         menu.addSeparator()
 
+        act_settings = QAction("设置…", menu)
+        act_settings.triggered.connect(self.open_settings)
+        menu.addAction(act_settings)
+
         act_data = QAction("打开数据文件夹", menu)
         act_data.triggered.connect(self.open_data_dir)
         menu.addAction(act_data)
         menu.addSeparator()
 
-        act_quit = QAction("退出", menu)
+        act_quit = QAction("退出 HanLin-Notes", menu)
         act_quit.triggered.connect(self.quit_app)
         menu.addAction(act_quit)
 
@@ -71,6 +75,11 @@ class TrayIcon(QSystemTrayIcon):
             subprocess.Popen(["explorer", path])
         else:  # pragma: no cover
             subprocess.Popen(["xdg-open", path])
+
+    def open_settings(self):
+        self.show_window()
+        if self.window is not None:
+            self.window.open_settings()
 
     def quit_app(self):
         w = self.window
