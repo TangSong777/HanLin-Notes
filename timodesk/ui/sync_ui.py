@@ -138,16 +138,12 @@ class SyncDialog(OperationDialog):
         fields.addWidget(QLabel("服务器地址", objectName="FieldLabel"))
         self.server = QLineEdit(config.get("serverUrl") or DEFAULT_SERVER)
         fields.addWidget(self.server)
-        pair_row = QHBoxLayout()
+        fields.addWidget(QLabel("Authenticator 六位动态验证码", objectName="FieldLabel"))
         self.code = QLineEdit()
-        self.code.setPlaceholderText("Authenticator 六位动态验证码")
         self.code.setMaxLength(32)
         self.code.setEchoMode(QLineEdit.Password)
-        pair_row.addWidget(self.code, 1)
-        self.pair_button = _button("配对", "Primary")
-        self.pair_button.clicked.connect(self._pair)
-        pair_row.addWidget(self.pair_button)
-        fields.addLayout(pair_row)
+        self.code.returnPressed.connect(self._pair)
+        fields.addWidget(self.code)
         lay.addWidget(self.pair_fields)
         self.pair_fields.hide()
 
@@ -158,12 +154,13 @@ class SyncDialog(OperationDialog):
         lay.addStretch(1)
         footer = QHBoxLayout()
         footer.addStretch(1)
-        self.sync_button = _button("立即同步", "Primary")
-        self.sync_button.clicked.connect(self._sync)
-        footer.addWidget(self.sync_button)
+        self.primary = _button("立即同步", "Primary")
+        self.primary.setFixedWidth(106)
+        self.primary.setAutoDefault(False)
+        self.primary.clicked.connect(self._activate)
+        footer.addWidget(self.primary)
         lay.addLayout(footer)
-        self.sync_button.hide()
-        self.setFixedSize(500, 288)
+        self.setFixedSize(500, 344)
         self.add_edge()
         factory = self._factory()
         self._run(lambda: factory().paired, self._show_state)
@@ -179,26 +176,33 @@ class SyncDialog(OperationDialog):
         self.paired = bool(paired)
         self.state.setText("自动同步已开启" if paired else "尚未配对")
         self.pair_fields.setVisible(not paired)
-        self.sync_button.setVisible(paired)
+        self.primary.setText("立即同步" if paired else "配对")
         if paired:
             automated = getattr(self.parentWidget(), "autosync", None)
             self.detail.setText(automated.last_status if automated and automated.last_status else "等待首次同步。")
         else:
-            self.detail.setText("填写为这台设备签发的配对码。")
+            self.detail.setText("输入手机 Authenticator 上显示的当前验证码。")
+            self.code.setFocus(Qt.OtherFocusReason)
+
+    def _activate(self):
+        if self.paired:
+            self._sync()
+        else:
+            self._pair()
 
     def _run(self, job, done, message="正在处理…"):
         self.detail.setText(message)
         self.pair_fields.setEnabled(False)
-        self.sync_button.setEnabled(False)
+        self.primary.setEnabled(False)
 
         def complete(result):
             self.pair_fields.setEnabled(True)
-            self.sync_button.setEnabled(True)
+            self.primary.setEnabled(True)
             done(result)
 
         def failed(exc):
             self.pair_fields.setEnabled(True)
-            self.sync_button.setEnabled(True)
+            self.primary.setEnabled(True)
             if type(exc).__name__ == "AuthError":
                 self._show_state(False)
             self.detail.setText(describe_error(exc))

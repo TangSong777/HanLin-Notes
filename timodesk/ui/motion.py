@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import QApplication, QGraphicsOpacityEffect
 FAST = 130
 BASE = 190
 SLOW = 240
+REORDER = 160
 
 
 def enabled() -> bool:

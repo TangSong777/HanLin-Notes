@@ -1025,7 +1025,8 @@ class MainWindow(QMainWindow):
         try:
             self.note_list.clear()
             for n in notes:
-                it = QListWidgetItem(n.display_title(self.lib.content(n.id)))
+                title = n.title.strip() if n.title else ""
+                it = QListWidgetItem(title or n.display_title(self.lib.content(n.id)))
                 it.setData(Qt.UserRole, n.id)
                 self.note_list.addItem(it)
         finally:

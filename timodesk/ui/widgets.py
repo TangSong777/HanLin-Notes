@@ -18,7 +18,7 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import QApplication, QListView, QListWidget, QListWidgetItem, QScrollBar, QStyledItemDelegate, QStyle
 
-from .motion import FAST, SLOW, duration, mix
+from .motion import FAST, REORDER, SLOW, duration, mix
 
 from ..store import TYPE_LABELS
 from .theme import C, reading_font
@@ -546,10 +546,10 @@ class TopicList(QListWidget):
         self._shift_start = {}
         self._shift_end = {}
         self._shift = QVariantAnimation(self)
-        self._shift.setDuration(170)
+        self._shift.setDuration(REORDER)
         self._shift.setStartValue(0.0)
         self._shift.setEndValue(1.0)
-        self._shift.setEasingCurve(QEasingCurve.OutCubic)
+        self._shift.setEasingCurve(QEasingCurve.OutQuad)
         self._shift.valueChanged.connect(lambda _: self.viewport().update())
         self._scroll_drag = QTimer(self, interval=16)
         self._scroll_drag.timeout.connect(self._scroll_drag_edge)
