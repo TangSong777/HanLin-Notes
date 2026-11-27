@@ -43,8 +43,18 @@ def describe_error(exc: BaseException) -> str:
     """把同步异常翻成一句用户能看懂的话。"""
     name = type(exc).__name__
     text = str(exc) or name
+    pairing_errors = {
+        "totp_required": "请输入 Authenticator 的六位动态验证码。",
+        "totp_invalid": "动态验证码不正确，请核对手机上的当前验证码。",
+        "totp_reused": "这个验证码已经用过，请等下一个。",
+        "totp_unavailable": "服务器尚未启用动态验证码配对。",
+        "bad_code": "服务器尚未启用动态验证码配对。",
+        "too_many_failures": "尝试次数过多，请稍后再试。",
+    }
+    if getattr(exc, "code", None) in pairing_errors:
+        return pairing_errors[exc.code]
     if name == "AuthError":
-        return f"没有通过认证，请在服务端重新生成配对码并重新配对。\n{text}"
+        return f"设备未获授权，请重新配对。\n{text}"
     if name == "ConflictError":
         head = getattr(exc, "remote_head", None)
         hint = f"云端最新版本 {str(head)[:8]}" if head else "云端已有新版本"
@@ -130,7 +140,8 @@ class SyncDialog(OperationDialog):
         fields.addWidget(self.server)
         pair_row = QHBoxLayout()
         self.code = QLineEdit()
-        self.code.setPlaceholderText("一次性配对码")
+        self.code.setPlaceholderText("Authenticator 六位动态验证码")
+        self.code.setMaxLength(32)
         self.code.setEchoMode(QLineEdit.Password)
         pair_row.addWidget(self.code, 1)
         self.pair_button = _button("配对", "Primary")
@@ -197,7 +208,7 @@ class SyncDialog(OperationDialog):
     def _pair(self):
         code, server = self.code.text().strip(), self.server.text().strip() or DEFAULT_SERVER
         if not code:
-            self.detail.setText("请填写配对码。")
+            self.detail.setText("请输入 Authenticator 的六位动态验证码。")
             return
         factory = self._factory()
         self.code.clear()

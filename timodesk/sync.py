@@ -1554,7 +1554,7 @@ class SyncClient:
         token = self.token
         if not token:
             raise AuthError(
-                "设备尚未配对：请先用服务端 CLI 生成配对码，再调用 pair(code)",
+                "设备尚未配对，请在云同步设置中重新配对。",
                 code="not_paired",
                 status=None,
             )
@@ -1563,24 +1563,30 @@ class SyncClient:
     # -- 配对与连接 -------------------------------------------------------
 
     def pair(self, code: str) -> dict[str, Any]:
-        """用一次性配对码换取 token 并落盘。
-
-        服务端的配对码用后即失效，所以这里不做自动重试：网络在收到响应前
-        中断时需要重新生成配对码。
-        """
-        code_text = str(code or "").strip().strip("-").replace(" ", "").upper()
-        if len(code_text) < 8:
-            raise SyncError("配对码格式不正确（去掉分隔符后至少 8 个字符）", code="bad_pair_code")
+        """验证一次性凭据并保存设备令牌。用过的凭据不能自动重试。"""
+        code_text = str(code or "").strip()
+        if re.fullmatch(r"[0-9]{6}", code_text):
+            endpoint = urllib.parse.urlsplit(self.config.server_url)
+            if endpoint.scheme != "https" and endpoint.hostname not in ("127.0.0.1", "::1", "localhost"):
+                raise SyncError("动态验证码只能发送到 HTTPS 服务器。", code="pair_requires_https")
+            body = {"app": APP_NAME, "totp": code_text, "name": self.config.device_name}
+        else:
+            code_text = code_text.strip("-").replace(" ", "").upper()
+            if len(code_text) < 8:
+                raise SyncError("请输入 Authenticator 的六位动态验证码。", code="bad_pair_code")
+            body = {"app": APP_NAME, "code": code_text}
         _, _, payload = self._http.request(
             "POST",
             self.PAIR_PATH,
-            json_body={"code": code_text},
+            json_body=body,
             expected=(200, 201),
             retry=False,
         )
         data = _parse_json_response(payload, "配对响应")
         if not isinstance(data, dict):
             raise SyncError("配对响应格式不正确", code="bad_response")
+        if data.get("app") not in (None, APP_NAME):
+            raise SyncError("该配对有效凭据属于另一款应用。", code="wrong_app")
         token = data.get("token")
         if not isinstance(token, str) or not token:
             raise SyncError("配对响应缺少 token", code="bad_response")
