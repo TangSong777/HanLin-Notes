@@ -63,13 +63,13 @@ for i in range(9):
     backup.create(lib, stamp=f"2020010{i % 9 + 1}-1200{i:02d}")
 check("只保留 7 份", len(backup.list_all(root)) == 7)
 
-# 8. 不含附件
+# 8. 自动备份同时保护附件
 att = lib.root / "attachments"
 att.mkdir(exist_ok=True)
 (att / "x.jpg").write_bytes(b"fake")
 p2 = backup.create(lib, stamp="20301231-235959")
-names = __import__("zipfile").ZipFile(p2).namelist()
-check("备份不含附件", not any("attachments" in x for x in names))
+with __import__("zipfile").ZipFile(p2) as archive:
+    check("备份保留原始附件字节", archive.read("attachments/x.jpg") == b"fake")
 
 # 9. 清空新加的
 print(f"\n{ok}/{total} PASS")

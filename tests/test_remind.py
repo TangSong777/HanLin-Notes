@@ -80,5 +80,13 @@ w.lib.set_reminder(w.editor.note.id, None)
 w.editor._sync_remind()
 check("清除后按钮恢复「提醒」", w.editor.btn_remind.text() == "提醒")
 
+lib.set_reminder(n1.id, past)
+w.hide()
+w._check_reminders()
+check("窗口隐藏时保留到期提醒", lib.notes[n1.id].remind_at == past)
+w.show()
+w._check_reminders()
+check("恢复窗口后处理到期提醒", lib.notes[n1.id].remind_at is None)
+
 print(f"\n{ok}/{total} PASS")
 sys.exit(0 if ok == total else 1)

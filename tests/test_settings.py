@@ -11,7 +11,7 @@ from timodesk.settings import Settings
 from timodesk.store import Library
 from timodesk.ui.dialogs import SettingsDialog
 from timodesk.ui.main_window import MainWindow
-from timodesk.ui.theme import C, available_text_fonts
+from timodesk.ui.theme import C, READING_SIZE, available_text_fonts
 
 ROOT = Path("worklib_set")
 shutil.rmtree(ROOT, ignore_errors=True)
@@ -80,6 +80,9 @@ if other_fonts:
     QTimer.singleShot(0, select_font)
     w.open_settings()
     check("切换正文字体立即生效", C["font_text"] == font and w.settings.get("font_family") == font)
+    w.set_theme("dark")
+    check("切换主题保留正文字体", C["font_text"] == font and w.editor.edit.font().family() == font)
+    check("编辑和预览字号一致", w.editor.edit.font().pixelSize() == w.editor.preview.font().pixelSize() == READING_SIZE)
 
 print(f"\ntotal: {ok} / {ok + fail}")
 sys.exit(0 if fail == 0 else 1)

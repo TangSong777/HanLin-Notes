@@ -7,10 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from PyQt5.QtCore import (
-    QEasingCurve,
     QEvent,
     QPoint,
-    QPropertyAnimation,
     QSize,
     Qt,
     QTimer,
@@ -35,7 +33,6 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QShortcut,
     QSizePolicy,
-    QSystemTrayIcon,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -67,7 +64,7 @@ from .title_bar import (
     TitleBar,
     rounded_mask,
 )
-from .motion import BASE, attach_hover, enabled as motion_enabled
+from .motion import BASE, SmoothWheel, attach_hover
 from .widgets import AutoFadeScrollBar, NoteCardDelegate, NoteList, TopicDelegate, TopicList
 from .visuals import Notice, WorkspaceStack, glyph
 
@@ -80,7 +77,8 @@ class MainWindow(QMainWindow):
     def __init__(self, lib: Library, parent=None):
         super().__init__(parent)
         self.lib = lib
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window | Qt.WindowSystemMenuHint
+                            | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
         self.view = ("all", None)  # (kind, topic_id)
         self._pending_save = None
         self._search_buf = ""
@@ -90,11 +88,13 @@ class MainWindow(QMainWindow):
         self.tray = None
         self.setAcceptDrops(True)
         self.settings = Settings(self.lib.root)
-        self.sort_mode = self.settings.get("sort_mode", "updated")
+        self.sort_mode = self.settings.get("sort_mode", "created")
+        self.topic_filter = self.settings.get("topic_filter", "active")
+        if self.topic_filter not in ("active", "archived", "all"):
+            self.topic_filter = "active"
         self.undo_stack = UndoStack(self.lib)
         self._undo_guard = False
         self._quitting = False
-        self._tray_hinted = False
         self._build_ui()
         self._sync_sort_menu()
         self._restore_geometry()
@@ -114,6 +114,10 @@ class MainWindow(QMainWindow):
         self._search_timer.timeout.connect(self._apply_search)
         self.refresh_topics()
         self._restore_view()
+        from ..autosync import AutoSync
+
+        self.autosync = AutoSync(self, self.settings, self.lib)
+        self.autosync.start()
 
     # ---------------- 工作台 ----------------
     def _build_ui(self):
@@ -196,6 +200,7 @@ class MainWindow(QMainWindow):
         column.addWidget(label)
         self.nav = QListWidget(objectName="NavList")
         self.nav.setFrameShape(QListWidget.NoFrame)
+        self.nav.setMouseTracking(True)
         self.nav.setFixedHeight(46)
         self.nav.setIconSize(QSize(16, 16))
         self.nav.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -213,10 +218,15 @@ class MainWindow(QMainWindow):
         topics_header.addWidget(QLabel("主题", objectName="RailLabel"))
         topics_header.addStretch()
         self.btn_topic_sort = QToolButton(objectName="RailIcon")
-        self.btn_topic_sort.setToolTip("主题排序")
-        self.btn_topic_sort.setAccessibleName("主题排序")
+        self.btn_topic_sort.setToolTip("主题排序与显示范围")
+        self.btn_topic_sort.setAccessibleName("主题排序与显示范围")
         self.btn_topic_sort.clicked.connect(lambda: self._show_topic_sort(self.btn_topic_sort))
         topics_header.addWidget(self.btn_topic_sort)
+        self.btn_finish_topic_sort = QToolButton(objectName="RailIcon", text="完成")
+        self.btn_finish_topic_sort.setToolTip("结束主题自定义排序")
+        self.btn_finish_topic_sort.clicked.connect(lambda: self._set_manual_topic_sort(False))
+        self.btn_finish_topic_sort.hide()
+        topics_header.addWidget(self.btn_finish_topic_sort)
         self.btn_add_topic = QToolButton(objectName="RailIcon")
         self.btn_add_topic.setToolTip("新建主题（Ctrl+Shift+N）")
         self.btn_add_topic.setAccessibleName("新建主题")
@@ -226,16 +236,19 @@ class MainWindow(QMainWindow):
 
         self.topic_list = TopicList(objectName="TopicList")
         self.topic_list.setVerticalScrollBar(AutoFadeScrollBar(Qt.Vertical, self.topic_list))
-        self.topic_list.setItemDelegate(TopicDelegate(self.lib, self))
+        self.topic_list.setItemDelegate(TopicDelegate(self.lib, self.topic_list))
         self.topic_list.setFrameShape(QListWidget.NoFrame)
         self.topic_list.setDefaultDropAction(Qt.MoveAction)
         self.topic_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.topic_list.customContextMenuRequested.connect(self._topic_menu)
         attach_hover(self.topic_list)
+        self.topic_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self._topic_wheel = SmoothWheel(self.topic_list)
         self.topic_list.currentRowChanged.connect(self._on_topic_changed)
         self.topic_list.itemClicked.connect(lambda _: self._show_library())
         self.topic_list.notesDropped.connect(self._on_notes_dropped)
-        self.topic_list.topicsReordered.connect(self._on_topics_reordered)
+        self.topic_list.topicMoved.connect(self._move_visible_topic)
+        self.topic_list.reorderFinished.connect(lambda: self._set_manual_topic_sort(False))
         column.addWidget(self.topic_list, 1)
 
         footer = QFrame(objectName="RailFooter")
@@ -379,6 +392,7 @@ class MainWindow(QMainWindow):
         self.note_list.setMovement(QListView.Static)
         self.note_list.setResizeMode(QListView.Adjust)
         self.note_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self._note_wheel = SmoothWheel(self.note_list, wheel_scale=0.65, wheel_duration=160)
         self.note_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.note_list.setUniformItemSizes(True)
         self.note_list.setLayoutMode(QListView.Batched)
@@ -600,6 +614,9 @@ class MainWindow(QMainWindow):
         if "sort_mode" in state and state["sort_mode"] != self.sort_mode:
             self._apply_sort(state["sort_mode"])
         self.refresh_topics()
+        if self.view[0] == "topic" and not self._topic_visible(self.lib.topics.get(self.view[1])):
+            self.select_nav("all")
+            return
         current = self.editor.note
         if current is not None and current.id not in self.lib.notes:
             self.editor.set_note(None)
@@ -631,7 +648,7 @@ class MainWindow(QMainWindow):
         last_note = self.settings.get("last_note") or None
 
         topic = self.lib.topics.get(topic_id) if isinstance(topic_id, str) else None
-        if kind == "topic" and topic and topic.state != "trash":
+        if kind == "topic" and self._topic_visible(topic):
             self.view = ("topic", topic_id)
             row = -1
             self.refresh_topics()
@@ -658,11 +675,15 @@ class MainWindow(QMainWindow):
             pass
 
     # ---------------- 侧栏 ----------------
+    def _topic_visible(self, topic) -> bool:
+        return topic is not None and topic.state != "trash" and self.topic_filter in ("all", topic.state)
+
     def refresh_topics(self):
         current = self.view[1] if self.view[0] == "topic" else None
+        self.topic_list.cancel_reorder()
         self.topic_list.blockSignals(True)
         self.topic_list.clear()
-        topics = [t for t in self.lib.topics.values() if t.state != "trash"]
+        topics = [t for t in self.lib.topics.values() if self._topic_visible(t)]
         topics.sort(key=lambda t: (t.order, t.created_at))
         active_counts = self.lib.note_counts("active")
         archived_counts = self.lib.note_counts("archived")
@@ -673,7 +694,8 @@ class MainWindow(QMainWindow):
         for t in topics:
             it = QListWidgetItem(t.name)
             it.setData(Qt.UserRole, t)
-            it.setToolTip(f"{t.name} · {counts.get(t.id, 0)} 条")
+            status = " · 已归档" if t.state == "archived" else ""
+            it.setToolTip(f"{t.name} · {counts.get(t.id, 0)} 条{status}")
             self.topic_list.addItem(it)
         if current:
             for i in range(self.topic_list.count()):
@@ -767,17 +789,14 @@ class MainWindow(QMainWindow):
         a_new = menu.addAction("在此主题新建笔记")
         menu.addSeparator()
         a_rename = menu.addAction("重命名主题…")
-        a_lock = menu.addAction("解除锁定" if topic.locked else "锁定主题")
+        a_archive = menu.addAction("取消归档主题" if topic.state == "archived" else "归档主题")
         a_delete = menu.addAction("删除主题")
         act = menu.exec_(self.topic_list.mapToGlobal(pos))
         if act is a_new:
             self.new_note(topic_id=topic.id)
-        elif act is a_lock:
-            self.toggle_topic_lock(topic)
+        elif act is a_archive:
+            self.toggle_topic_archive(topic)
         elif act is a_rename:
-            if topic.locked:
-                info(self, "主题已锁定", f"「{topic.name}」已锁定，先解除锁定再改名。")
-                return
             from .dialogs import InputDialog
 
             dlg = InputDialog(self, "重命名主题", "主题名称", text=topic.name)
@@ -793,10 +812,7 @@ class MainWindow(QMainWindow):
                 if self.view == ("topic", topic.id):
                     self._reload_notes()
         elif act is a_delete:
-            if topic.locked:
-                info(self, "主题已锁定", f"「{topic.name}」已锁定，先解除锁定再删除。")
-                return
-            cnt = (self.lib.note_counts("archived") if topic.state == "archived" else self.lib.note_counts()).get(topic.id, 0)
+            cnt = self.lib.topic_note_count(topic.id) - self.lib.topic_note_count(topic.id, "trash")
             if cnt:
                 if not confirm(
                     self,
@@ -823,6 +839,21 @@ class MainWindow(QMainWindow):
         a_name = menu.addAction("主题按名称排序")
         a_count = menu.addAction("主题按笔记数排序")
         a_time = menu.addAction("主题按最近更新排序")
+        a_custom = menu.addAction("自定义排序")
+        a_custom.setCheckable(True)
+        a_custom.setChecked(self.topic_list.reordering)
+        menu.addSeparator()
+        group = QActionGroup(menu)
+        for mode, label in (
+            ("active", "只显示未归档主题"),
+            ("archived", "只显示已归档主题"),
+            ("all", "显示所有主题"),
+        ):
+            action = menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(self.topic_filter == mode)
+            action.setData(mode)
+            group.addAction(action)
         act = menu.exec_(pos)
         if act is a_name:
             self.sort_topics("name")
@@ -830,9 +861,24 @@ class MainWindow(QMainWindow):
             self.sort_topics("count")
         elif act is a_time:
             self.sort_topics("updated")
+        elif act is a_custom:
+            self._set_manual_topic_sort(a_custom.isChecked())
+        elif act is not None and act.actionGroup() is group:
+            self._set_topic_filter(act.data())
+
+    def _set_topic_filter(self, mode: str):
+        if mode == self.topic_filter:
+            return
+        self._flush_save()
+        self.settings.set("topic_filter", mode)
+        self.topic_filter = mode
+        self.refresh_topics()
+        if self.view[0] == "topic" and not self._topic_visible(self.lib.topics.get(self.view[1])):
+            self.select_nav("all")
 
     def sort_topics(self, by: str):
         """把主题列表重新排一遍（只影响非回收站主题，结果写回 order）。"""
+        self._set_manual_topic_sort(False)
         topics = [t for t in self.lib.topics.values() if t.state != "trash"]
         if len(topics) < 2:
             return
@@ -864,6 +910,33 @@ class MainWindow(QMainWindow):
         self.refresh_topics()
         self._toast(f"主题已按{label}排序")
 
+    def _set_manual_topic_sort(self, enabled: bool):
+        self.topic_list.set_reordering(enabled)
+        self.btn_finish_topic_sort.setVisible(enabled)
+        if enabled:
+            self.topic_list.setFocus()
+
+    def _move_visible_topic(self, source: int, target: int):
+        topics = sorted(
+            (t for t in self.lib.topics.values() if t.state != "trash"),
+            key=lambda t: (t.order, t.created_at),
+        )
+        visible = [t for t in topics if self._topic_visible(t)]
+        if source == target or not (0 <= source < len(visible) and 0 <= target < len(visible)):
+            return
+        moved = visible.pop(source)
+        visible.insert(target, moved)
+        # Preserve the slots occupied by topics hidden by the current filter.
+        ordered = iter(visible)
+        ids = [next(ordered).id if self._topic_visible(t) else t.id for t in topics]
+        bar = self.topic_list.verticalScrollBar()
+        scroll = bar.value()
+        with self.undoable("自定义主题排序", topic_ids=ids):
+            self.lib.reorder_topics(ids)
+        self.refresh_topics()
+        self.topic_list.doItemsLayout()
+        bar.setValue(scroll)
+
     def _topic_name_taken(self, name: str, exclude_id: str | None = None) -> bool:
         """是否已有同名主题（回收站里的不算，重命名自己也不算）。"""
         key = name.strip()
@@ -886,6 +959,8 @@ class MainWindow(QMainWindow):
             t = self.lib.add_topic(name)
             scope.topics.add(t.id)
             self.lib.save()
+        if self.topic_filter == "archived":
+            self._set_topic_filter("active")
         self.refresh_topics()
         for i in range(self.topic_list.count()):
             if self.topic_list.item(i).data(Qt.UserRole).id == t.id:
@@ -894,10 +969,9 @@ class MainWindow(QMainWindow):
     # ---------------- 列表 ----------------
     def _current_notes(self) -> list[Note]:
         kind, tid = self.view
-        order = getattr(self, "sort_mode", "updated")
+        order = getattr(self, "sort_mode", "created")
         if kind == "all":
-            # 「全部笔记」永远按时间倒序（最近更新在前），不受排序菜单影响
-            return self.lib.sorted_notes(state="active", order="updated")
+            return self.lib.sorted_notes(state="active", order="created")
         if kind == "archived":
             return self.lib.sorted_notes(state="archived", order=order)
         if kind == "trash":
@@ -906,8 +980,9 @@ class MainWindow(QMainWindow):
         state = "archived" if (t and t.state == "archived") else "active"
         return self.lib.topic_notes(tid, state=state, order=order)
 
-    def _reload_notes(self, select_id: str | None = None, animate: bool = False):
+    def _reload_notes(self, select_id: str | None = None, animate: bool = False, *, preserve_scroll: bool = False):
         kind, tid = self.view
+        scroll = self.note_list.verticalScrollBar().value()
         title = "全部笔记"
         if kind == "archived":
             title = "归档"
@@ -932,14 +1007,18 @@ class MainWindow(QMainWindow):
                 pool = self.lib.sorted_notes(state="active")
             notes = self.lib.search(self._search_buf, pool=pool)
             # 搜索结果也跟着当前的排序方式走，不然和列表其它时候不一致
-            if self.sort_mode != "updated":
-                self.lib.sort_notes(notes, self.sort_mode)
+            order = "created" if kind == "all" else self.sort_mode
+            if order != "updated":
+                self.lib.sort_notes(notes, order)
             self.header_label.setText("搜索结果")
         self.header_label.setToolTip(title if not self._search_buf else self._search_buf)
         # 「全部笔记」固定按时间，排序菜单在这里没有意义，置灰并说明
         fixed = kind == "all"
         self.btn_sort.setEnabled(not fixed)
-        self.btn_sort.setToolTip("全部笔记固定按最近更新排列；进主题后可切换排序" if fixed else "排序")
+        self._sync_sort_menu()
+        if fixed:
+            self.btn_sort.setText("最近创建")
+            self.btn_sort.setToolTip("全部笔记按创建时间倒序排列")
 
         self.note_list.blockSignals(True)
         self.note_list.setUpdatesEnabled(False)
@@ -1000,10 +1079,14 @@ class MainWindow(QMainWindow):
             self.note_list.blockSignals(True)
             self.note_list.setCurrentRow(-1)
             self.note_list.blockSignals(False)
-            self.note_list.scrollToTop()
+            if not preserve_scroll:
+                self.note_list.scrollToTop()
             self._show_library()
             self.editor.set_note(None, focus=False)
 
+        if preserve_scroll and notes:
+            self.note_list.doItemsLayout()
+            self.note_list.verticalScrollBar().setValue(scroll)
         if animate and notes:
             self.note_list.reveal_cards()
         self._sync_batch_actions()
@@ -1020,19 +1103,12 @@ class MainWindow(QMainWindow):
             return
         bar = self.note_list.verticalScrollBar()
         target = max(bar.minimum(), min(bar.maximum(), bar.value() + rect.top() - 6))
-        if not motion_enabled() or abs(target - bar.value()) < 4:
-            bar.setValue(target)
-            return
-        anim = QPropertyAnimation(bar, b"value", self)
-        anim.setDuration(ms)
-        anim.setStartValue(bar.value())
-        anim.setEndValue(target)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.start()
-        self._scroll_anim = anim
+        self._note_wheel.scroll_to(target, ms)
 
     def _check_reminders(self):
-        """把到点的提醒弹出来（每条只提醒一次）。"""
+        """窗口可见时显示到期提醒，每条只显示一次。"""
+        if not self.isVisible() or self.isMinimized():
+            return
         due = self.lib.due_reminders()
         if not due:
             return
@@ -1040,14 +1116,8 @@ class MainWindow(QMainWindow):
         if len(due) > 3:
             names += " 等"
         text = f"{len(due)} 条笔记到时间了：{names}"
-        if self.tray is not None:
-            self.tray.showMessage("寒淋笔记 提醒", text, QSystemTrayIcon.Information, 8000)
-        if self.isVisible():
-            self._toast(text, 6000)
-            QApplication.alert(self, 0)  # 任务栏图标闪烁，直到用户回到窗口
-            self._reload_notes()
-        else:
-            self._reload_notes(select_id=self.editor.note.id if self.editor.note else None)
+        self._toast(text, 6000)
+        self._reload_notes(select_id=self.editor.note.id if self.editor.note else None)
 
     def _on_notes_delete_key(self, note_ids):
         """列表上按 Delete：移到回收站（回收站里的笔记不在这里处理）。"""
@@ -1063,28 +1133,8 @@ class MainWindow(QMainWindow):
 
         if not confirm(self, "移到回收站", f"把 {len(ids)} 条笔记移到回收站？", danger=True):
             return
-        self._flush_save()
-        with self.undoable(f"移到回收站 {len(ids)} 条", note_ids=ids):
-            for nid in ids:
-                self.lib.delete_note(nid)
-            self.lib.save()
-        self.refresh_topics()
-        self._reload_notes(animate=True)
-        self._toast(f"已移到回收站（{len(ids)} 条）")
-
-    def _on_topics_reordered(self):
-        """主题拖动排序后，按界面顺序写回 order 并保存。"""
-        ids = []
-        for i in range(self.topic_list.count()):
-            it = self.topic_list.item(i)
-            topic = it.data(Qt.UserRole) if it else None
-            tid = getattr(topic, "id", None)
-            if tid:
-                ids.append(tid)
-        if len(ids) < 2:
-            return
-        with self.undoable("调整主题顺序", topic_ids=ids):
-            self.lib.reorder_topics(ids)
+        if self._bulk_apply(ids, "delete"):
+            self._toast(f"已移到回收站（{len(ids)} 条）")
 
     def _move_targets(self):
         """右键「移动到主题」的可选目标：正常主题 + 归档主题（回收站里的不给选）。"""
@@ -1097,17 +1147,9 @@ class MainWindow(QMainWindow):
 
     def _on_notes_dropped(self, note_ids, topic_id: str):
         """把笔记（可多选）拖到左侧主题上：批量移动到该主题。"""
-        ids = [i for i in note_ids if i in self.lib.notes]
-        if not ids:
-            return
-        self._flush_save()
-        with self.undoable(f"移动 {len(ids)} 条笔记", note_ids=ids):
-            moved = self.lib.move_notes(ids, topic_id)
-        if not moved:
-            return
-        self.refresh_topics()
-        self._reload_notes(animate=True)
-        if len(ids) > 1:
+        ids = [i for i in dict.fromkeys(note_ids) if (n := self.lib.notes.get(i))
+               and n.state != "trash" and n.topic_id != topic_id]
+        if ids and self._bulk_apply(ids, "move", topic_id) and len(ids) > 1:
             self._toast(f"已移动 {len(ids)} 条笔记")
 
     def _on_note_changed(self, row: int):
@@ -1166,7 +1208,8 @@ class MainWindow(QMainWindow):
         self._toast("已恢复到这版内容（Ctrl+Z 可撤回）")
 
     def _show_note_actions(self, note, pos):
-        self.save_now()
+        if not self.save_now():
+            return
         nid = note.id
         menu = QMenu(self)
         on_grid = self.workspace.currentWidget() is self.library_page
@@ -1183,9 +1226,15 @@ class MainWindow(QMainWindow):
                 act.setChecked(True)
         menu.addSeparator()
         a_arch = menu.addAction("取消归档" if note.state == "archived" else "归档")
+        topic = self.lib.topics.get(note.topic_id)
+        if topic and topic.state == "archived":
+            a_arch.setText("随主题归档")
+            a_arch.setEnabled(False)
         move_menu = menu.addMenu("移动到主题")
-        for t in self._move_targets():
-            if t.id != note.topic_id:
+        if note.state == "trash":
+            move_menu.menuAction().setVisible(False)
+        else:
+            for t in (t for t in self._move_targets() if t.id != note.topic_id):
                 act = move_menu.addAction(self._move_label(t))
                 act.setData(t.id)
         a_history = menu.addAction("历史版本…")
@@ -1227,11 +1276,14 @@ class MainWindow(QMainWindow):
         if act is a_purge:
             if not confirm(self, "彻底删除", "这条笔记会被永久删除，无法恢复。继续？", danger=True):
                 return
-            with self.undoable("彻底删除 1 条笔记", note_ids=[nid]):
-                self.lib.delete_note(nid, hard=True)
-            self.refresh_topics()
-            self._reload_notes(animate=True)
-            self._toast("已永久删除")
+            if self._bulk_apply([nid], "purge"):
+                self._toast("已永久删除")
+            return
+        if act is a_del:
+            self._bulk_apply([nid], "delete")
+            return
+        if act in move_menu.actions():
+            self._bulk_apply([nid], "move", act.data())
             return
 
         # 剩下都是写操作：统一包进撤销栈
@@ -1239,16 +1291,12 @@ class MainWindow(QMainWindow):
             label = "取消置顶" if note.pinned_at else "置顶"
         elif act is a_arch:
             label = "取消归档" if note.state == "archived" else "归档"
-        elif act is a_del:
-            label = "删除到回收站"
         elif act is a_restore:
             label = "从回收站恢复"
         elif act is a_dup:
             label = "复制笔记"
         elif act is not None and act.parent() is color_menu:
             label = "颜色标记"
-        elif act is not None and act.parent() is move_menu:
-            label = "移动笔记"
         else:
             return
         with self.undoable(label, note_ids=[nid]) as scope:
@@ -1261,17 +1309,14 @@ class MainWindow(QMainWindow):
                 copy.url, copy.account, copy.password, copy.remark = note.url, note.account, note.password, note.remark
                 copy.date, copy.images, copy.description = note.date, list(note.images), note.description
                 scope.notes.add(copy.id)
-            elif act is a_del:
-                self.lib.delete_note(nid)
             elif act is a_restore:
                 self.lib.restore_note(nid)
             elif act.parent() is color_menu:
                 self.lib.toggle_color(nid, act.data())
-            elif act.parent() is move_menu:
-                self.lib.move_note(nid, act.data())
-            self.lib.save()
+            if act is a_dup:
+                self.lib.save()
         self.refresh_topics()
-        self._reload_notes(animate=act in (a_del, a_arch, a_restore, a_dup))
+        self._reload_notes(animate=act is a_dup, preserve_scroll=act is not a_dup)
 
     def _bulk_menu(self, pos, items):
         """多选时的批量操作菜单。"""
@@ -1291,22 +1336,30 @@ class MainWindow(QMainWindow):
             a_purge = None
             pinned = all(self.lib.notes[i].pinned_at for i in ids)
             a_pin = menu.addAction(f"取消置顶 {n} 条" if pinned else f"置顶 {n} 条")
-            arch = self.view[0] == "archived"
+            arch = all(self.lib.notes[i].state == "archived" for i in ids)
             a_arch = menu.addAction(f"取消归档 {n} 条" if arch else f"归档 {n} 条")
+            if arch and any(
+                (topic := self.lib.topics.get(self.lib.notes[i].topic_id)) and topic.state == "archived" for i in ids
+            ):
+                a_arch.setText("选择中包含随主题归档的笔记")
+                a_arch.setEnabled(False)
             a_restore = None
         move_menu = menu.addMenu(f"移动到主题（{n} 条）")
-        for t in self._move_targets():
-            act = move_menu.addAction(self._move_label(t))
-            act.setData(t.id)
+        if self.view[0] == "trash":
+            move_menu.menuAction().setVisible(False)
+        else:
+            for t in self._move_targets():
+                act = move_menu.addAction(self._move_label(t))
+                act.setData(t.id)
         menu.addSeparator()
-        a_del = menu.addAction(f"删除 {n} 条")
+        a_del = menu.addAction(f"删除 {n} 条") if self.view[0] != "trash" else None
         act = menu.exec_(pos)
         if act is None:
             return
         if act is a_pin:
             self._bulk_apply(ids, "unpin" if self.lib.notes[ids[0]].pinned_at else "pin")
         elif act is a_arch:
-            self._bulk_apply(ids, "unarchive" if self.view[0] == "archived" else "archive")
+            self._bulk_apply(ids, "unarchive" if arch else "archive")
         elif act is a_restore:
             self._bulk_apply(ids, "restore")
         elif act is a_purge:
@@ -1314,12 +1367,13 @@ class MainWindow(QMainWindow):
                 self._bulk_apply(ids, "purge")
         elif act is a_del:
             self._bulk_apply(ids, "delete")
-        elif act.parent() is move_menu:
+        elif act in move_menu.actions():
             self._bulk_apply(ids, "move", act.data())
 
     def _bulk_apply(self, ids, kind: str, payload=None):
         """对一批笔记执行同一操作。kind: pin/unpin/archive/unarchive/restore/delete/purge/move"""
-        self._flush_save()
+        if not self.save_now():
+            return False
         labels = {
             "pin": "置顶",
             "unpin": "取消置顶",
@@ -1330,27 +1384,26 @@ class MainWindow(QMainWindow):
             "purge": "彻底删除",
             "move": "移动到主题",
         }
-        with self.undoable(f"{labels.get(kind, '操作')} {len(ids)} 条笔记", note_ids=ids):
-            if kind == "pin":
-                self.lib.pin_notes(ids, True)
-            elif kind == "unpin":
-                self.lib.pin_notes(ids, False)
-            elif kind == "archive":
-                self.lib.archive_notes(ids, True)
-            elif kind == "unarchive":
-                self.lib.archive_notes(ids, False)
-            elif kind == "restore":
-                for nid in ids:
-                    self.lib.restore_note(nid)
-            elif kind == "delete":
-                self.lib.delete_notes(ids)
-            elif kind == "purge":
-                self.lib.delete_notes(ids, hard=True)
-            elif kind == "move" and payload:
-                self.lib.move_notes(ids, payload)
-            self.lib.save()
+        try:
+            with self.undoable(f"{labels[kind]} {len(ids)} 条笔记", note_ids=ids):
+                if kind in ("pin", "unpin"):
+                    self.lib.pin_notes(ids, kind == "pin")
+                elif kind in ("archive", "unarchive"):
+                    self.lib.archive_notes(ids, kind == "archive")
+                elif kind == "restore":
+                    for nid in ids:
+                        self.lib.restore_note(nid)
+                elif kind in ("delete", "purge"):
+                    if not self.lib.delete_notes(ids, hard=kind == "purge"):
+                        return False
+                elif kind == "move" and not self.lib.move_notes(ids, payload):
+                    return False
+        except OSError:
+            self._toast("操作未能保存，请检查数据目录后重试", 6000)
+            return False
         self.refresh_topics()
-        self._reload_notes(animate=True)
+        self._reload_notes(preserve_scroll=True)
+        return True
 
     # ---------------- 编辑保存 ----------------
     def new_note(self, note_type: str = "note", *, topic_id: str | None = None):
@@ -1396,28 +1449,30 @@ class MainWindow(QMainWindow):
         self.refresh_topics()
         self._reload_notes()
 
-    def _flush_save(self):
+    def _flush_save(self) -> bool:
         if not self._pending_save:
-            return
+            return True
         note_id, content, title = self._pending_save
-        self._pending_save = None
         note = self.lib.notes.get(note_id)
         if not note:
-            return
-        self.lib.set_content(note_id, content)
-        if self.editor.note and self.editor.note.id == note_id:
-            self.editor.flush_note()
-        if note.type == "article" and title is not None:
-            note.title = title.strip() or None
-        self.lib.touch(note_id)
+            self._pending_save = None
+            return True
         try:
+            self.lib.set_content(note_id, content)
+            if self.editor.note and self.editor.note.id == note_id:
+                self.editor.flush_note()
+            if note.type == "article" and title is not None:
+                note.title = title.strip() or None
+            self.lib.touch(note_id)
             self.lib.save()
         except OSError as exc:  # 磁盘满、目录只读、文件被杀软占用
             self._save_failed(exc)
-            return
+            return False
+        self._pending_save = None
         self._save_error_shown = False
         self.editor.mark_saved()
         self._refresh_item(note_id)
+        return True
 
     def _save_failed(self, exc: OSError) -> None:
         """写盘失败时不要吞掉：把状态标成未保存，并提示一次原因。"""
@@ -1429,7 +1484,7 @@ class MainWindow(QMainWindow):
 
     def save_now(self):
         self._save_timer.stop()
-        self._flush_save()
+        return self._flush_save()
 
     def _refresh_item(self, note_id: str):
         for i in range(self.note_list.count()):
@@ -1682,12 +1737,19 @@ class MainWindow(QMainWindow):
         self._reload_notes(animate=True)
         self._toast(f"已永久删除 {n} 条笔记")
 
-    def toggle_topic_lock(self, topic):
-        """锁定后主题不能改名、不能删除，避免手滑。"""
-        topic.locked = not topic.locked
-        self.lib.save()
+    def toggle_topic_archive(self, topic):
+        self._flush_save()
+        archive = topic.state != "archived"
+        label = "归档主题" if archive else "取消归档主题"
+        children = [n.id for n in self.lib.notes.values() if n.topic_id == topic.id]
+        with self.undoable(f"{label}「{topic.name}」", note_ids=children, topic_ids=[topic.id]):
+            self.lib.archive_topic(topic.id, archive)
         self.refresh_topics()
-        self._toast("已锁定主题" if topic.locked else "已解除锁定")
+        if self.view == ("topic", topic.id) and not self._topic_visible(topic):
+            self.select_nav("all")
+        else:
+            self._reload_notes(animate=True)
+        self._toast(f"已{label}「{topic.name}」")
 
     def open_settings(self, section_index=0):
         from .dialogs import SettingsDialog
@@ -1710,32 +1772,24 @@ class MainWindow(QMainWindow):
         want_font = dlg.cmb_font.currentData()
         if want_font != previous_font:
             self.apply_font(want_font)
+        sync_cfg = self.settings.get("sync") or {}
+        if sync_cfg.get("enabled") and sync_cfg.get("autoSync") and not self._sync_paired():
+            self._toast("云同步已开启，但还没有配对：到「设置 → 数据 → 配对与同步…」完成配对")
+        self.autosync.note_settings_changed()
 
     def apply_font(self, family: str) -> None:
         """切换正文/预览字体：改 QSS + 给列表和编辑器换字体。"""
-        from PyQt5.QtGui import QFont
-
-        from .theme import app_qss, set_text_font
+        from .theme import READING_SIZE, app_qss, reading_font, set_text_font
 
         family = set_text_font(family)
         self.settings.set("font_family", family)
-        QApplication.instance().setStyleSheet(app_qss())
 
-        def font_like(widget):
-            """沿用控件原来的字号，只换字体族，避免切字体后整界面忽大忽小。"""
-            f = QFont(family)
-            if widget.font().pixelSize() > 0:
-                f.setPixelSize(widget.font().pixelSize())
-            elif widget.font().pointSizeF() > 0:
-                f.setPointSizeF(widget.font().pointSizeF())
-            return f
-
-        for w in (self.note_list, self.topic_list, self.editor):
-            w.setFont(font_like(w))
-        # 编辑器里的正文框/预览框是构造时设的字体，这里一并换掉
+        app = QApplication.instance()
+        app.setStyleSheet(app_qss())
+        font = reading_font(app.font(), READING_SIZE)
         for w in self.editor.findChildren(QWidget):
             if isinstance(w, (QPlainTextEdit, QTextBrowser)):
-                w.setFont(font_like(w))
+                w.setFont(font)
         self.note_list.viewport().update()
         self.topic_list.viewport().update()
         self.editor.refresh_theme()
@@ -1843,6 +1897,50 @@ class MainWindow(QMainWindow):
         from PyQt5.QtCore import QUrl
 
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.lib.root)))
+
+    def _sync_paired(self) -> bool:
+        try:
+            from ..sync import CredentialStore, normalize_server_url
+
+            store = CredentialStore()
+            data = store.load() or {}
+            cfg = self.settings.get("sync") or {}
+            server = normalize_server_url(str(cfg.get("serverUrl") or ""))
+        except Exception:
+            return False
+        return bool(server and data.get(server))
+
+    def open_sync_dialog(self):
+        from .sync_ui import SyncDialog
+
+        if self.autosync.running():
+            self._toast("后台同步正在运行，请稍后再打开同步窗口。")
+            return
+        if not self.save_now():
+            return
+        self.autosync.pause()
+        try:
+            dlg = SyncDialog(self, self.settings, self.lib)
+            dlg.exec_()
+            if dlg.restored:
+                self._reload_library()
+        finally:
+            self.autosync.resume()
+
+    def _reload_library(self):
+        """同步恢复后重新读盘：内存里的旧库不能回写新库。"""
+        self.editor.set_note(None)
+        try:
+            self.lib.load()
+            self.undo_stack = UndoStack(self.lib)
+        except Exception as exc:  # noqa: BLE001
+            error(self, "重新读取笔记库失败", f"{exc}")
+            return
+        self.view = ("all", None)
+        self.refresh_topics()
+        self.select_nav("all")
+        self._reload_notes(animate=True)
+        self._toast("笔记库已更新")
 
     def _toast(self, text: str, ms: int = 1600):
         self.notice.present(text, ms)
@@ -2022,22 +2120,16 @@ class MainWindow(QMainWindow):
             pass
 
     def closeEvent(self, e):  # noqa: N802
+        keep_running = self.tray is not None and not self._quitting
+        if not keep_running and getattr(self, "autosync", None) is not None:
+            self.autosync.stop()
         self._save_geometry()
         self._save_view()
         self.save_now()
         self.lib.save()
-        # 有托盘时，关闭 = 收进托盘；从托盘菜单退出才算真退出
-        if self.tray is not None and not self._quitting:
+        if keep_running:
             e.ignore()
-            self.hide()
-            if not self._tray_hinted:
-                self._tray_hinted = True
-                self.tray.showMessage(
-                    "寒淋笔记",
-                    "已收进托盘。点托盘图标可以重新打开，右键可以退出。",
-                    QSystemTrayIcon.Information,
-                    4000,
-                )
+            self.showMinimized()
             return
         super().closeEvent(e)
 

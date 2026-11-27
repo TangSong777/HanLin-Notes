@@ -2,9 +2,9 @@
 import sys
 
 sys.path.insert(0, ".")
-from PyQt5.QtCore import QEvent, QPointF, Qt
-from PyQt5.QtGui import QMouseEvent
-from PyQt5.QtWidgets import QApplication, QListWidget, QWidget
+from PyQt5.QtCore import QEvent, QPoint, QPointF, Qt
+from PyQt5.QtGui import QMouseEvent, QWheelEvent
+from PyQt5.QtWidgets import QApplication, QListWidget, QScrollArea, QWidget
 
 from timodesk.ui import motion
 
@@ -71,6 +71,40 @@ check("移出后行号清空", tracker2.row == -1)
 check("非当前行进度为 0", tracker2.progress_for(0) == 0.0)
 
 view2.close()
+
+# ---- 4. 滚轮合并、反向输入和系统动画设置 ----
+area = QScrollArea()
+content = QWidget()
+content.resize(150, 900)
+area.setWidget(content)
+area.resize(200, 200)
+area.show()
+app.processEvents()
+wheel = motion.SmoothWheel(area)
+bar = area.verticalScrollBar()
+bar.setSingleStep(20)
+bar.setValue(300)
+
+def wheel_input(angle, pixel=0):
+    event = QWheelEvent(QPointF(20, 20), QPointF(20, 20), QPoint(0, pixel), QPoint(0, angle),
+                        Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+    return wheel.eventFilter(area.viewport(), event)
+
+try:
+    motion.enabled = lambda: True
+    check("普通滚轮启动缓动", wheel_input(-120) and wheel.target > 300 and bar.value() == 300)
+    first = wheel.target
+    check("连续滚动合并目标", wheel_input(-120) and wheel.target > first)
+    wheel.animation.setCurrentTime(motion.FAST // 2)
+    check("滚动经过中间位置", 300 < bar.value() < wheel.target)
+    current = bar.value()
+    check("反向滚动立即换方向", wheel_input(120) and wheel.target < current)
+    check("像素滚动走原生路径", not wheel_input(-120, -15) and wheel.target is None)
+    motion.enabled = lambda: False
+    check("关闭动画时使用原生滚轮", not wheel_input(-120) and wheel.target is None)
+finally:
+    motion.enabled = original
+    area.close()
 
 print(f"\n{ok}/{total} PASS")
 sys.exit(0 if ok == total else 1)

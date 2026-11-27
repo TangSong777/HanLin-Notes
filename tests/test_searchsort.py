@@ -38,7 +38,9 @@ w.search.setText("孤独")
 w._apply_search()
 
 titles = [w.lib.notes[w.note_list.item(i).data(Qt.UserRole)].title for i in range(w.note_list.count())]
-check("默认按更新时间", len(titles) == 3)
+check("全部笔记可搜到三条", len(titles) == 3)
+
+w.view = ("topic", t.id)
 
 w.set_sort("title")
 w.search.setText("孤独")

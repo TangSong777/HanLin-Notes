@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 
 from PyQt5.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, QVariantAnimation, Qt
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QCursor
 from PyQt5.QtWidgets import QApplication, QGraphicsOpacityEffect
 
 # 时长（毫秒）：FAST 用于 hover / 状态微调，BASE 用于页面与弹窗，SLOW 用于较大的位移。
@@ -51,6 +51,11 @@ def fade_in(widget, ms: int = BASE, start: float = 0.0, end: float = 1.0) -> QPr
 
     注意：Qt 的 QGraphicsOpacityEffect 会让子控件离屏渲染，只适合小面积、短时间使用。
     """
+    previous = getattr(widget, "_fade_anim", None)
+    if previous is not None:
+        previous.stop()
+        previous.deleteLater()
+        widget._fade_anim = None
     if not enabled():
         widget.setGraphicsEffect(None)
         return None
@@ -65,7 +70,10 @@ def fade_in(widget, ms: int = BASE, start: float = 0.0, end: float = 1.0) -> QPr
 
     def _done():
         try:
-            widget.setGraphicsEffect(None)
+            if widget._fade_anim is anim:
+                widget._fade_anim = None
+                widget.setGraphicsEffect(None)
+                anim.deleteLater()
         except RuntimeError:
             pass
 
@@ -73,6 +81,85 @@ def fade_in(widget, ms: int = BASE, start: float = 0.0, end: float = 1.0) -> QPr
     widget._fade_anim = anim  # 持有引用，避免被回收
     anim.start()
     return anim
+
+
+class SmoothWheel(QObject):
+    """缓动普通滚轮，保留触控板、滚动条和键盘的原生控制。"""
+
+    def __init__(self, area, *, wheel_scale=1.0, wheel_duration=FAST):
+        super().__init__(area)
+        self.wheel_scale = wheel_scale
+        self.wheel_duration = wheel_duration
+        self.viewport = area.viewport()
+        self.bar = area.verticalScrollBar()
+        self.animation = QVariantAnimation(self)
+        self.animation.setEasingCurve(QEasingCurve.OutCubic)
+        self.animation.valueChanged.connect(self._apply)
+        self.animation.finished.connect(self._stop)
+        self.bar.sliderPressed.connect(self._stop)
+        self.bar.rangeChanged.connect(self._stop)
+        self.bar.valueChanged.connect(self._external_change)
+        self.target = None
+        self._applying = False
+        self.viewport.installEventFilter(self)
+        area.installEventFilter(self)
+
+    def _apply(self, value):
+        self._applying = True
+        try:
+            self.bar.setValue(int(value))
+        finally:
+            self._applying = False
+
+    def _stop(self, *_):
+        self.target = None
+        self.animation.stop()
+
+    def _external_change(self, _):
+        if not self._applying:
+            self._stop()
+
+    def scroll_to(self, value, ms=FAST):
+        self._stop()
+        value = max(self.bar.minimum(), min(self.bar.maximum(), int(value)))
+        current = self.bar.value()
+        if not enabled() or abs(value - current) < 2:
+            self.bar.setValue(value)
+            return
+        self.target = value
+        self.animation.setDuration(ms)
+        self.animation.setStartValue(current)
+        self.animation.setEndValue(value)
+        self.animation.start()
+
+    def eventFilter(self, obj, event):  # noqa: N802
+        kind = event.type()
+        if kind in (QEvent.Hide, QEvent.KeyPress, QEvent.MouseButtonPress, QEvent.ScrollPrepare):
+            self._stop()
+        if obj is not self.viewport or kind != QEvent.Wheel:
+            return False
+        angle = event.angleDelta()
+        lines = QApplication.wheelScrollLines()
+        if ((self.wheel_scale == 1 and not enabled()) or not lines or not event.pixelDelta().isNull() or
+                event.phase() != Qt.NoScrollPhase or event.modifiers() != Qt.NoModifier or
+                not angle.y() or abs(angle.x()) >= abs(angle.y())):
+            self._stop()
+            return False
+        current = self.bar.value()
+        step = max(1, round(abs(angle.y()) * max(1, self.bar.singleStep()) * lines * self.wheel_scale / 120))
+        if angle.y() > 0:
+            step = -step
+        ahead = (self.target if self.target is not None else current) - current
+        base = self.target if step * ahead > 0 else current
+        limit = max(self.viewport.height(), abs(step))
+        value = max(current - limit, min(current + limit, base + step))
+        value = max(self.bar.minimum(), min(self.bar.maximum(), value))
+        if value == current:
+            self._stop()
+            return False
+        self.scroll_to(value, self.wheel_duration)
+        event.accept()
+        return True
 
 
 class HoverTracker(QObject):
@@ -88,11 +175,13 @@ class HoverTracker(QObject):
         self.row = -1
         self.progress = 0.0
         self._anim = QVariantAnimation(self)
+        self.duration_ms = duration_ms
         self._anim.setDuration(duration(duration_ms))
         self._anim.setEasingCurve(QEasingCurve.OutCubic)
         self._anim.valueChanged.connect(self._apply)
         view.viewport().setMouseTracking(True)
         view.viewport().installEventFilter(self)
+        view.verticalScrollBar().valueChanged.connect(self._refresh_at_cursor)
         view.destroyed.connect(self._on_destroyed)
 
     # ---- 外部读取 ----
@@ -114,6 +203,7 @@ class HoverTracker(QObject):
             self.view.viewport().update()
             return
         self._anim.stop()
+        self._anim.setDuration(self.duration_ms)
         self._anim.setStartValue(self.progress if start is None else start)
         self._anim.setEndValue(target)
         self._anim.start()
@@ -129,6 +219,12 @@ class HoverTracker(QObject):
 
     def _on_destroyed(self, *_args):
         self.view = None
+
+    def _refresh_at_cursor(self, *_):
+        if self.view is not None and self.view.viewport().underMouse():
+            viewport = self.view.viewport()
+            index = self.view.indexAt(viewport.mapFromGlobal(QCursor.pos()))
+            self._set_row(index.row() if index.isValid() else -1)
 
     # ---- 事件 ----
     def eventFilter(self, obj, event):  # noqa: N802

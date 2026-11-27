@@ -45,7 +45,10 @@ check("默认仍数 active", lib.note_counts().get(b.id, 0) == 0)
 
 w = MainWindow(lib)
 d = w.topic_list.itemDelegate()
-check("delegate 拿到计数", d.counts.get(a.id) == 2 and d.counts.get(b.id) == 2)
+check("默认显示未归档主题的计数", d.counts.get(a.id) == 2 and w.topic_list.count() == 1)
+w._set_topic_filter("all")
+d = w.topic_list.itemDelegate()
+check("显示所有主题时有两种计数", d.counts.get(a.id) == 2 and d.counts.get(b.id) == 2)
 
 # tooltip 与列表项一致
 tips = []

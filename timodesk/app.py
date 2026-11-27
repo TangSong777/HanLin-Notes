@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
+import threading
 from pathlib import Path
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QCoreApplication, QEvent, Qt, QTimer
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
@@ -18,10 +20,13 @@ from PyQt5.QtWidgets import (
 )
 
 from .importer import import_export
+from .instance import LibraryInstance
+from .render import warm_up as _warm_up_render
 from .settings import Settings
 from .store import Library
 from .ui.main_window import MainWindow
 from .ui.theme import apply_theme
+from .ui.hover_tip import HoverTips
 from .ui.title_bar import BrandPanel, FramelessDialog, app_icon
 from .ui.dialogs import ProgressDialog, error, info
 from .ui.tray import TrayIcon
@@ -41,12 +46,16 @@ def base_dir() -> Path:
 def data_dir() -> Path:
     """便携优先：程序目录/Data；不可写时退到用户目录。"""
     env = os.environ.get("HANLIN_DATA_DIR") or os.environ.get("TIMO_DATA_DIR")
-    d = Path(env) if env else (base_dir() / "Data")
+    desktop_data = base_dir() / "Data"
+    d = desktop_data if (desktop_data / ".hanlin-portable").is_file() or not env else Path(env)
+    from .sync import local_restore_pending
+
+    if local_restore_pending(d):
+        return d
     try:
         d.mkdir(parents=True, exist_ok=True)
-        probe = d / ".write_test"
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink()
+        with tempfile.TemporaryFile(dir=d):
+            pass
         return d
     except Exception:
         base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
@@ -253,19 +262,20 @@ def run():
             pass
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
+    hover_tips = HoverTips(app)
+    app.installEventFilter(hover_tips)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName("")
     app.setOrganizationName("HanLin-Notes")
     app.setFont(QFont("Microsoft YaHei UI", 9))
     root = data_dir()
     _install_excepthook(root)
-    settings = Settings(root)
     # 字体要在生成 QSS 之前定下来，否则样式表里写的是旧字体
     from .ui.theme import set_text_font
 
-    set_text_font(settings.get("font_family", "宋体"))
-    apply_theme(app, resolve_theme_mode(settings.get("theme_mode", "light")))
+    apply_theme(app, "light")
     app.setWindowIcon(app_icon())
 
     args = list(sys.argv[1:])
@@ -278,6 +288,34 @@ def run():
     # 尽早开始，避免被欢迎对话框等模态窗口挡住
     _schedule_delete(delete_targets)
 
+    cli = next((str(Path(a).resolve()) for a in args if a and Path(a).exists()), "")
+    instance = LibraryInstance(root, app)
+    ownership = instance.start(cli)
+    if ownership != "primary":
+        if ownership == "busy":
+            error(None, "无法打开笔记库", "笔记库正由另一个实例使用，暂时无法唤出窗口。请稍后重试。")
+        return 0 if ownership == "forwarded" else 1
+    try:
+        from .sync import local_restore_pending, recover_local_restore
+
+        if local_restore_pending(root):
+            try:
+                recover_local_restore(root)
+            except Exception as exc:  # Leave an interrupted library available for recovery.
+                error(None, "笔记恢复尚未完成", str(exc))
+                return 1
+        # Keep secondary launches lightweight, and let Python finish a pending
+        # Markdown initialization before unloading the packaged interpreter.
+        threading.Thread(target=_warm_up_render, name="HanLinMarkdownWarmup").start()
+        settings = Settings(root)
+        set_text_font(settings.get("font_family", "宋体"))
+        apply_theme(app, resolve_theme_mode(settings.get("theme_mode", "light")))
+        return _run_primary(app, root, settings, cli, instance)
+    finally:
+        instance.close()
+
+
+def _run_primary(app, root, settings, cli, instance):
     lib = Library(root).load()
     if lib.load_error:
         recover_library(lib)
@@ -289,7 +327,6 @@ def run():
             "已尽量读出能读的部分。需要的话可以在「数据与设置 → 备份与恢复」里挑一份备份恢复。",
         )
 
-    cli = next((a for a in args if a and Path(a).exists()), "")
     if cli:
         if not _import_with_progress(lib, cli):
             return 1
@@ -324,11 +361,42 @@ def run():
     tray.show()
     app.setQuitOnLastWindowClosed(False)
     win.show()
-    if purged:
-        from PyQt5.QtCore import QTimer
 
+    def activate_existing(path):
+        tray.show_window()
+        if path and Path(path).exists():
+            def import_when_ready():
+                if app.activeModalWidget() is not None or not win.isEnabled():
+                    QTimer.singleShot(200, import_when_ready)
+                elif not win._quitting:
+                    win._do_import(path)
+            QTimer.singleShot(0, import_when_ready)
+
+    instance.set_handler(activate_existing)
+    if (root / ".hanlin-portable").is_file():
+        request = root / ".hanlin-exit"
+
+        def exit_for_update():
+            if app.activeModalWidget() is not None or win.autosync.running():
+                return
+            try:
+                request.unlink()
+            except OSError:
+                return
+            tray.quit_app()
+
+        update_timer = QTimer(app)
+        update_timer.timeout.connect(exit_for_update)
+        update_timer.start(400)
+    if purged:
         QTimer.singleShot(1500, lambda: win._toast(f"回收站里 {purged} 条超过 30 天的笔记已清理"))
-    return app.exec_()
+    result = app.exec_()
+    tray.detach()
+    win.tray = None
+    tray.deleteLater()
+    win.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    return result
 
 
 if __name__ == "__main__":

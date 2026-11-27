@@ -1,8 +1,10 @@
 """HanLin-Notes 的浅色、深色配色与控件样式。"""
 from __future__ import annotations
 
+import sys
+
 from PyQt5.QtCore import QPointF, QRectF, Qt
-from PyQt5.QtGui import QColor, QPainter, QPen, QPolygonF
+from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
 from PyQt5.QtWidgets import QProxyStyle, QStyle
 
 LIGHT = {
@@ -79,14 +81,17 @@ DARK = {
 
 C = dict(LIGHT)
 _mode = "light"
+READING_SIZE = 16
 
 
 def set_mode(mode: str) -> str:
     """原地更新 C，让自绘控件读取到生效的配色。"""
     global _mode
     _mode = "dark" if str(mode).lower() in ("dark", "深色", "夜间") else "light"
+    family = C["font_text"]
     C.clear()
     C.update(DARK if _mode == "dark" else LIGHT)
+    C["font_text"] = family
     return _mode
 
 
@@ -303,11 +308,13 @@ QLineEdit {{
     padding: 8px 11px; color: {C['ink']};
     selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
+QLineEdit:hover:enabled:!focus {{ border-color: {C['accent']}; }}
 QLineEdit:focus {{ border-color: {C['accent_text']}; }}
 QLineEdit#Search {{
     background: {C['paper_alt']}; border: 1px solid {C['line']}; border-radius: 8px;
     padding: 5px 10px; font-size: {int(13 * s)}px;
 }}
+QLineEdit#Search:hover {{ background: {C['card']}; border-color: {C['accent']}; }}
 QLineEdit#Search:focus {{ background: {C['card']}; border-color: {C['accent_text']}; }}
 QPushButton#NewNoteBtn {{
     border-top-left-radius: 8px; border-bottom-left-radius: 8px;
@@ -330,7 +337,7 @@ QToolButton#CornerLink {{
     border: none; background: transparent; padding: 1px 0;
     color: {C['muted']}; font-size: {int(11 * s)}px;
 }}
-QToolButton#CornerLink:hover {{ color: {C['ink']}; }}
+QToolButton#CornerLink:hover {{ color: {C['accent_text']}; background: {C['hover_bg']}; }}
 QToolButton#CornerLink:checked {{ color: {C['accent_text']}; font-weight: 600; }}
 #SideSection {{ color: {C['muted']}; font-size: {int(11 * s)}px; font-weight: 600; padding: 2px 6px; }}
 QListWidget#TopicList, QListWidget#NavList {{ background: transparent; border: none; }}
@@ -341,7 +348,7 @@ QListWidget#NavList::item {{
 QListWidget#NavList::item:selected {{
     background: {C['checked_bg']}; color: {C['accent_text']}; border-left: 2px solid {C['accent']};
 }}
-QListWidget#NavList::item:hover:!selected {{ background: {C['card_hover']}; }}
+QListWidget#NavList::item:hover:!selected {{ background: {C['hover_bg']}; color: {C['accent_text']}; }}
 #CollectionHeader {{ border-bottom: 1px solid {C['card_border_strong']}; }}
 QLabel#CollectionTitle {{ font-size: {int(31 * s)}px; }}
 QLabel#CollectionCount {{ color: {C['muted']}; font-size: {int(12 * s)}px; }}
@@ -349,7 +356,8 @@ QToolButton#CollectionControl {{
     background: {C['card']}; border: 1px solid {C['card_border']};
     border-radius: 7px; padding: 7px 10px;
 }}
-QToolButton#CollectionControl:hover, QToolButton#CollectionControl:focus {{ border-color: {C['accent_text']}; }}
+QToolButton#CollectionControl:hover {{ background: {C['hover_bg']}; border-color: {C['accent']}; }}
+QToolButton#CollectionControl:focus {{ border-color: {C['accent_text']}; }}
 QToolButton#CollectionControl:checked {{ background: {C['checked_bg']}; color: {C['accent_text']}; }}
 QToolButton#CollectionControl:disabled {{
     color: {C['faint']}; border-color: {C['line']}; background: transparent;
@@ -377,6 +385,7 @@ QLabel#GeneratedTitle, QLineEdit#NoteTitle {{
     font-size: {int(30 * s)}px; padding: 3px 0; color: {C['ink']};
 }}
 QLineEdit#NoteTitle {{ background: transparent; border: none; border-bottom: 1px solid transparent; }}
+QLineEdit#NoteTitle:hover:enabled:!focus {{ border-bottom-color: {C['accent']}; }}
 QLineEdit#NoteTitle:focus {{ border-bottom-color: {C['accent_text']}; }}
 QFrame#DocumentFooter {{
     background: {C['card_soft']}; border-top: 1px solid {C['line']};
@@ -386,8 +395,10 @@ QLabel#SaveState {{ color: {C['muted']}; font-size: {int(11 * s)}px; }}
 
 QFrame#FormatBar {{ background: {C['card']}; border-bottom: 1px solid {C['line']}; }}
 QToolButton#FormatControl {{ padding: 2px; }}
+QToolButton#FormatControl:hover:enabled {{ background: {C['hover_bg']}; }}
 QFrame#ModeSwitch {{ background: {C['paper_alt']}; border: 1px solid {C['line']}; border-radius: 8px; }}
 QToolButton#ModeOption {{ padding: 4px 12px; color: {C['muted']}; border-radius: 5px; border: 1px solid transparent; }}
+QToolButton#ModeOption:hover:!checked {{ background: {C['hover_bg']}; color: {C['accent_text']}; }}
 QToolButton#ModeOption:checked {{ background: {C['card']}; color: {C['accent_text']}; border-color: {C['card_border']}; }}
 QToolButton#ModeOption:focus {{ border-color: {C['accent_text']}; }}
 QFrame#SourceSheet {{ background: {C['paper_alt']}; }}
@@ -395,7 +406,7 @@ QFrame#PreviewSheet {{ background: {C['card']}; }}
 QLabel#SheetCaption {{ color: {C['muted']}; font-size: {int(11 * s)}px; padding: 10px 24px 3px; }}
 QPlainTextEdit#Editor, QTextBrowser#Preview {{
     border: none; padding: 8px 24px 15px;
-    font-family: {C['font_text']}; font-size: {int(15 * s)}px; color: {C['ink']};
+    font-family: {C['font_text']}; font-size: {int(READING_SIZE * s)}px; color: {C['ink']};
     selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
 QPlainTextEdit#Editor {{ background: {C['paper_alt']}; }}
@@ -416,10 +427,11 @@ QPlainTextEdit#FieldDescription {{
     background: {C['card']}; border: 1px solid {C['line']}; border-radius: 6px;
     padding: 9px 10px; font-family: {C['font_text']}; font-size: {int(14 * s)}px;
 }}
+QPlainTextEdit#FieldDescription:hover:enabled:!focus {{ border-color: {C['accent']}; }}
 QPlainTextEdit#FieldDescription:focus {{ border-color: {C['accent_text']}; }}
 QListWidget#Wall {{ background: {C['card_soft']}; border: 1px solid {C['line']}; border-radius: 8px; }}
 QListWidget#Wall::item {{ border: 1px solid transparent; border-radius: 8px; margin: 2px; }}
-QListWidget#Wall::item:hover {{ background: {C['card_hover']}; }}
+QListWidget#Wall::item:hover {{ background: {C['hover_bg']}; }}
 QListWidget#Wall::item:selected {{ background: {C['checked_bg']}; border-color: {C['accent']}; }}
 
 QDateEdit, QTimeEdit {{
@@ -427,6 +439,7 @@ QDateEdit, QTimeEdit {{
     border-radius: 5px; padding: 6px 8px; min-height: 18px;
     selection-background-color: {C['sel_bg']}; selection-color: {C['accent_text']};
 }}
+QDateEdit:hover:enabled:!focus, QTimeEdit:hover:enabled:!focus {{ border-color: {C['accent']}; }}
 QDateEdit:focus, QTimeEdit:focus {{ border-color: {C['accent_text']}; }}
 QLabel#Notice {{
     background: {C['ink']}; color: {C['on_ink']}; border-left: 3px solid {C['accent']};
@@ -501,15 +514,15 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: 
 
 /* ---------- 菜单 ---------- */
 QMenu {{
-    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 10px; padding: 6px;
+    background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 10px; padding: 4px;
 }}
-QMenu::item {{ padding: 7px 28px 7px 12px; border-radius: 6px; }}
+QMenu::item {{ padding: 7px 8px 7px 10px; border-radius: 6px; }}
 QMenu::item:selected {{ background: {C['checked_bg']}; color: {C['accent_text']}; }}
 QMenu::item:disabled {{ color: {C['faint']}; }}
 QMenu::separator {{ height: 1px; background: {C['line']}; margin: 5px 8px; }}
 
 QToolTip {{
-    background: {C['ink']}; color: {C['on_ink']}; border: none; padding: 6px 9px; border-radius: 7px;
+    background: {C['card']}; color: {C['ink']}; border: 1px solid {C['card_border']}; padding: 6px 9px; border-radius: 7px;
 }}
 
 /* ---------- 对话框 ---------- */
@@ -543,6 +556,7 @@ QListWidget#HistoryList {{
     border-radius: 8px; padding: 4px;
 }}
 QListWidget#HistoryList::item {{ padding: 7px 8px; border-radius: 6px; color: {C['ink_soft']}; }}
+QListWidget#HistoryList::item:hover:!selected {{ background: {C['hover_bg']}; color: {C['accent_text']}; }}
 QListWidget#HistoryList::item:selected {{ background: {C['card']}; color: {C['ink']}; }}
 QTextBrowser#HistoryPreview {{
     background: {C['card']}; border: 1px solid {C['card_border']}; border-radius: 8px;
@@ -553,6 +567,8 @@ QListWidget#BackupList, QListWidget#TrashTopicList, QTreeWidget#DupeTree {{
 }}
 QListWidget#BackupList::item, QListWidget#TrashTopicList::item {{ padding: 7px 8px; border-radius: 6px; }}
 QTreeWidget#DupeTree::item {{ height: 26px; }}
+QListWidget#BackupList::item:hover:!selected, QListWidget#TrashTopicList::item:hover:!selected,
+QTreeWidget#DupeTree::item:hover:!selected {{ background: {C['hover_bg']}; }}
 QListWidget#BackupList::item:selected, QListWidget#TrashTopicList::item:selected, QTreeWidget#DupeTree::item:selected {{
     background: {C['checked_bg']}; color: {C['accent_text']};
 }}
@@ -565,6 +581,9 @@ QComboBox {{
     background: {C['card']}; border: 1px solid {C['card_border_strong']}; border-radius: 5px; padding: 6px 10px;
 }}
 QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 26px; border: none; }}
+QComboBox:hover:enabled:!focus, QSpinBox:hover:enabled:!focus {{
+    border-color: {C['accent']}; background: {C['card_hover']};
+}}
 QComboBox:focus, QSpinBox:focus {{ border-color: {C['accent_text']}; }}
 QComboBox QAbstractItemView {{
     background: {C['card']}; border: 1px solid {C['card_border']}; selection-background-color: {C['checked_bg']};
@@ -635,3 +654,20 @@ def set_text_font(family: str) -> str:
         family = fonts[0][1] if fonts else "宋体"
     C["font_text"] = family
     return family
+
+
+def reading_font(base=None, pixels=None):
+    """保留正文所选字体，避开 Windows 宋体的小字号点阵字形。"""
+    font = QFont(base) if base is not None else QFont()
+    font.setFamily(C["font_text"])
+    if pixels is not None:
+        font.setPixelSize(pixels)
+    if sys.platform == "win32":
+        if font.family().casefold() in ("宋体", "simsun"):
+            # Qt 5 的 Windows 默认路径仍会选用宋体内嵌点阵，ForceOutline 单独不够。
+            font.setStyleStrategy(QFont.PreferAntialias | QFont.ForceOutline)
+            font.setHintingPreference(QFont.PreferNoHinting)
+        else:
+            font.setStyleStrategy(QFont.PreferDefault)
+            font.setHintingPreference(QFont.PreferDefaultHinting)
+    return font

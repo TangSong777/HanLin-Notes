@@ -1,6 +1,6 @@
 """核心功能自动化测试：新建 / 编辑 / 搜索 / 删除 / 归档 / 导出导入。"""
-import shutil
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from PyQt5.QtWidgets import QApplication
 
@@ -9,9 +9,11 @@ from timodesk.ui.main_window import MainWindow
 
 app = QApplication([])
 
-shutil.rmtree("worklib", ignore_errors=True)
-shutil.copytree("testlib", "worklib")
-lib = Library("worklib").load()
+scratch = TemporaryDirectory(prefix="hanlin-notes-core-")
+root = Path(scratch.name)
+lib = Library(root / "library").load()
+fixture_topic = lib.add_topic("学习")
+lib.add_note(fixture_topic.id, content="奖学金申请材料")
 w = MainWindow(lib)
 w.resize(1280, 830)
 w.show()
@@ -29,7 +31,7 @@ assert note is not None and len(lib.notes) == n0 + 1
 w.editor.edit.setPlainText("桌面版写入的第一条笔记\n\n- [ ] 待办一项\n支持 **Markdown**")
 w.editor._emit()
 w.save_now()
-txt = (Path("worklib/notes") / f"{note.id}.md").read_text(encoding="utf-8")
+txt = (root / "library" / "notes" / f"{note.id}.md").read_text(encoding="utf-8")
 ok.append(("新建+保存", "第一条笔记" in txt and "[ ] 待办一项" in txt))
 ok.append(("正文长度", len(lib.content(note.id)) > 20))
 
@@ -69,9 +71,8 @@ lib.save()
 from timodesk.exporter import export_zip
 from timodesk.importer import import_export
 
-path, counts = export_zip(lib, "worklib_export.zip")
-shutil.rmtree("worklib2", ignore_errors=True)
-lib2 = Library("worklib2").load()
+path, counts = export_zip(lib, root / "export.zip")
+lib2 = Library(root / "imported").load()
 # 完整性往返保留所有原始条目，默认去重行为由 test_importdedupe.py 验证。
 rep = import_export(path, lib2, dedupe=False)
 ok.append(("导出导入数量", rep.notes == len(lib.notes) and rep.topics == len(lib.topics)))

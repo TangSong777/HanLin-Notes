@@ -1,4 +1,4 @@
-"""验证托盘行为：关闭收进托盘、点托盘再唤出。"""
+"""验证托盘行为：关闭后最小化、保持任务栏窗口，点托盘再唤出。"""
 import sys
 from pathlib import Path
 
@@ -24,6 +24,8 @@ app.setQuitOnLastWindowClosed(False)
 win.show()
 
 result = {}
+messages = []
+tray.showMessage = lambda *args: messages.append(args)
 
 
 def step1():
@@ -35,11 +37,14 @@ def step1():
 
 
 def step2():
-    result["win_visible_after_close"] = win.isVisible()
-    result["hint_shown"] = win._tray_hinted
+    result["win_minimized_after_close"] = win.isMinimized()
+    assert win.isVisible() and win.isMinimized()
+    result["no_system_popup"] = not messages
+    assert result["no_system_popup"]
     tray.show_window()
     app.processEvents()
     result["win_visible_after_tray"] = win.isVisible()
+    assert win.isVisible() and not win.isMinimized()
     win.raise_()
     win.activateWindow()
     app.processEvents()
@@ -49,9 +54,7 @@ def step3():
     win.grab().save(str(ROOT / "shot_tray.png"))
     result["title"] = win.windowTitle()
     print(result)
-    win._quitting = True
-    win.close()
-    app.quit()
+    tray.quit_app()
 
 
 QTimer.singleShot(700, step1)

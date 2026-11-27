@@ -7,9 +7,31 @@ from __future__ import annotations
 
 import html
 import re
+import threading
 from pathlib import Path
 
 import markdown
+
+_MD_EXTENSIONS = ["fenced_code", "tables", "nl2br", "sane_lists"]
+_md_lock = threading.Lock()
+_md_instance: markdown.Markdown | None = None
+
+
+def _markdown() -> markdown.Markdown:
+    """复用一个 Markdown 实例：每次新建都要重新装配扩展，单次约 4ms。"""
+    global _md_instance
+    if _md_instance is None:
+        _md_instance = markdown.Markdown(extensions=_MD_EXTENSIONS, output_format="html5")
+    return _md_instance
+
+
+def warm_up() -> None:
+    """后台预热：首次渲染要 import markdown 并加载扩展（约 200ms），提前做掉，点开笔记就不用等。"""
+    try:
+        with _md_lock:
+            _markdown()
+    except Exception:  # 预热失败不影响正常渲染
+        pass
 
 TASK_RE = re.compile(r"^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\]\s+", re.M)
 LIST_RE = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+")
@@ -58,9 +80,9 @@ def _abs_images(html_text: str, root: Path) -> str:
     return re.sub(r'src="([^"]+)"', repl, html_text)
 
 
-def _css(colors: dict[str, str]) -> str:
+def _css(colors: dict[str, str], font_size: int) -> str:
     return f"""
-body {{ color:{colors['ink']}; font-family:{colors['font_text']}; font-size:15px;
+body {{ color:{colors['ink']}; font-family:{colors['font_text']}; font-size:{font_size}px;
        line-height:1.85; margin:0; }}
 h1 {{ font-size:24px; font-weight:600; margin:22px 0 10px; }}
 h2 {{ font-size:19px; font-weight:600; margin:18px 0 8px; }}
@@ -86,17 +108,14 @@ th {{ background:{colors['card_soft']}; font-weight:600; }}
 
 
 def render(text: str, root: str | Path, empty_hint: str = "开始写点什么……", *, for_print: bool = False) -> str:
-    from .ui.theme import C, LIGHT
+    from .ui.theme import C, LIGHT, READING_SIZE
 
-    css = _css(LIGHT if for_print else C)
+    css = _css(LIGHT if for_print else C, 15 if for_print else READING_SIZE)
     body = text or ""
     if not body.strip():
         return f'<html><head><style>{css}</style></head><body><p class="empty">{html.escape(empty_hint)}</p></body></html>'
     body = _render_tasks(body)
-    md = markdown.Markdown(
-        extensions=["fenced_code", "tables", "nl2br", "sane_lists"],
-        output_format="html5",
-    )
-    inner = md.convert(body)
+    with _md_lock:
+        inner = _markdown().convert(body)
     inner = _abs_images(inner, Path(root))
     return f"<html><head><meta charset='utf-8'><style>{css}</style></head><body>{inner}</body></html>"

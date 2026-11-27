@@ -1,7 +1,8 @@
-"""本地快照：把 library.json 与 notes/*.md 打包成 zip，出问题时可回退。"""
+"""本地快照包含笔记索引、正文、附件和历史。"""
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 import time
@@ -28,16 +29,20 @@ def create(lib, stamp: str | None = None) -> Path:
     lib.save()
     name = PREFIX + (stamp or datetime.now().strftime("%Y%m%d-%H%M%S")) + ".zip"
     out = backup_dir(lib.root) / name
-    notes = lib.root / "notes"
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        z.write(lib.json_path, "library.json")
-        if notes.exists():
-            for p in sorted(notes.glob("*.md")):
-                z.write(p, "notes/" + p.name)
-        hist = lib.root / "history"
-        if hist.exists():
-            for p in sorted(hist.rglob("*.json")):
-                z.write(p, "history/" + p.relative_to(hist).as_posix())
+    fd, name = tempfile.mkstemp(prefix=".hanlin-backup-", suffix=".tmp", dir=out.parent)
+    os.close(fd)
+    temporary = Path(name)
+    try:
+        with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(lib.json_path, "library.json")
+            for dirname, pattern in (("notes", "*.md"), ("history", "*.json"), ("attachments", "*")):
+                base = lib.root / dirname
+                for file in sorted(base.rglob(pattern)):
+                    if file.is_file() and not file.is_symlink() and file.resolve().is_relative_to(base.resolve()):
+                        z.write(file, file.relative_to(lib.root).as_posix())
+        os.replace(temporary, out)
+    finally:
+        temporary.unlink(missing_ok=True)
     prune(lib.root)
     return out
 
@@ -109,5 +114,8 @@ def restore(lib, src: Path) -> None:
             if hist.exists():
                 shutil.rmtree(hist)
             shutil.copytree(src_hist, hist)
+        attachments = tmp / "attachments"
+        if attachments.is_dir():
+            shutil.copytree(attachments, lib.root / "attachments", dirs_exist_ok=True)
         shutil.copy2(libjson, lib.json_path)
     lib.load()

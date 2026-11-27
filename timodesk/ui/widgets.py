@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtCore import QEasingCurve, QMimeData, QPoint, QRect, QRectF, QSize, Qt, QVariantAnimation, pyqtSignal
+from PyQt5.QtCore import QEasingCurve, QMimeData, QPoint, QRect, QRectF, QSize, Qt, QTimer, QVariantAnimation, pyqtSignal
 from PyQt5.QtGui import (
     QColor,
     QDrag,
@@ -16,12 +16,12 @@ from PyQt5.QtGui import (
     QPen,
     QPixmap,
 )
-from PyQt5.QtWidgets import QListView, QListWidget, QListWidgetItem, QScrollBar, QStyledItemDelegate, QStyle
+from PyQt5.QtWidgets import QApplication, QListView, QListWidget, QListWidgetItem, QScrollBar, QStyledItemDelegate, QStyle
 
 from .motion import FAST, SLOW, duration, mix
 
 from ..store import TYPE_LABELS
-from .theme import C
+from .theme import C, reading_font
 from .visuals import glyph, motion_enabled
 
 
@@ -136,14 +136,12 @@ class NoteCardDelegate(QStyledItemDelegate):
         hovered = bool(option.state & QStyle.State_MouseOver)
         tracker = getattr(grid, "hover", None) if isinstance(grid, NoteList) else None
         hv = tracker.progress_for(index.row()) if tracker is not None else (1.0 if hovered else 0.0)
-        if selected:
-            hv = 0.0
         painter.setPen(Qt.NoPen)
         # 悬停时卡片轻微抬起：阴影更深、偏移多 1px
-        painter.setBrush(QColor(0, 0, 0, round(5 + 6 * hv)))
+        painter.setBrush(QColor(0, 0, 0, round(5 + 12 * hv)))
         painter.drawRoundedRect(card.translated(0, 2 + round(hv)), 11, 11)
-        painter.setBrush(mix(C["card"], C["card_hover"], hv))
-        border = mix(C["card_border"], C["card_border_strong"], hv)
+        painter.setBrush(mix(C["card"], C["hover_bg"], 0.55 * hv))
+        border = mix(C["card_border"], C["accent"], 0.65 * hv)
         painter.setPen(QPen(QColor(C["accent"]) if selected else border, 1.2 if selected else 1))
         painter.drawRoundedRect(card, 11, 11)
 
@@ -158,12 +156,12 @@ class NoteCardDelegate(QStyledItemDelegate):
                 painter.drawRoundedRect(QRectF(card.left() + 1, top + 31, 3, 34), 1.5, 1.5)
         marker = QRect(left, top, 26, 26)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(C["checked_bg" if selected else "card_soft"]))
+        painter.setBrush(QColor(C["checked_bg"]) if selected else mix(C["card_soft"], C["hover_bg"], hv))
         painter.drawRoundedRect(QRectF(marker), 6, 6)
         glyph(kind, "accent_text" if selected else "muted").paint(painter, marker.adjusted(5, 5, -5, -5))
 
-        meta = QFont(option.font)
-        meta.setPixelSize(11)
+        meta = QApplication.font()
+        meta.setPixelSize(12)
         painter.setFont(meta)
         painter.setPen(QColor(C["muted"]))
         painter.drawText(QRect(left + 33, top, right - left - 80, 26), Qt.AlignVCenter | Qt.AlignLeft,
@@ -182,8 +180,7 @@ class NoteCardDelegate(QStyledItemDelegate):
             painter.drawPixmap(QRect(right - 59, top + 31, 59, 59), cover)
             text_width -= 70
 
-        heading = QFont(option.font)
-        heading.setPixelSize(16)
+        heading = reading_font(option.font, 16)
         heading.setWeight(QFont.DemiBold)
         painter.setFont(heading)
         title_font = QFontMetrics(heading)
@@ -193,8 +190,7 @@ class NoteCardDelegate(QStyledItemDelegate):
         _draw_line(painter, QRect(left, top + 33, text_width, 24), shown, self.term, title_font, title_color)
 
         body = self._summary(note, content, title).strip()
-        summary_font = QFont(option.font)
-        summary_font.setPixelSize(12)
+        summary_font = reading_font(option.font, 14)
         painter.setFont(summary_font)
         summary_metrics = QFontMetrics(summary_font)
         painter.setPen(QColor(C["muted"]))
@@ -330,25 +326,30 @@ class TopicDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index) -> QSize:
         return QSize(180, 36)
 
-    def paint(self, painter: QPainter, option, index):
+    def paint(self, painter: QPainter, option, index, *, reordering=False, floating=False):
         topic = index.data(Qt.UserRole)
         if not topic:
             return
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.fillRect(option.rect, QColor(C["paper_alt"]))
+        if not reordering:
+            painter.fillRect(option.rect, QColor(C["paper_alt"]))
         r = option.rect.adjusted(1, 2, -2, -2)
         selected = bool(option.state & QStyle.State_Selected)
         hovered = bool(option.state & QStyle.State_MouseOver)
         tracker = getattr(self.parent(), "hover", None)
-        hv = tracker.progress_for(index.row()) if tracker is not None else (1.0 if hovered else 0.0)
-        if selected:
+        hv = 0.0 if reordering else (tracker.progress_for(index.row()) if tracker is not None else float(hovered))
+        if floating:
+            painter.setPen(QPen(QColor(C["accent"]), 1))
+            painter.setBrush(QColor(C["card"]))
+            painter.drawRoundedRect(r, 8, 8)
+        elif selected:
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(C["checked_bg"]))
+            painter.setBrush(mix(C["checked_bg"], C["hover_bg"], 0.65 * hv))
             painter.drawRoundedRect(r, 8, 8)
         elif hv > 0.01:
             painter.setPen(Qt.NoPen)
-            painter.setBrush(mix(C["paper_alt"], C["card_hover"], hv))
+            painter.setBrush(mix(C["paper_alt"], C["hover_bg"], hv))
             painter.drawRoundedRect(r, 8, 8)
         cnt = self.counts.get(topic.id, 0)
         archived = getattr(topic, "state", "active") == "archived"
@@ -359,8 +360,7 @@ class TopicDelegate(QStyledItemDelegate):
         name_color = C["faint"] if archived else C["ink"]
         painter.setPen(QColor(C["accent_text"] if selected else name_color))
         fm = QFontMetrics(name_font)
-        locked = bool(getattr(topic, "locked", False))
-        name = fm.elidedText(topic.name, Qt.ElideRight, r.width() - 67 - (15 if locked else 0))
+        name = fm.elidedText(topic.name, Qt.ElideRight, r.width() - 67)
         center = r.center().y()
         glyph("folder", "accent_text" if selected else "muted").paint(
             painter, QRect(r.left() + 9, center - 8, 16, 16)
@@ -370,8 +370,6 @@ class TopicDelegate(QStyledItemDelegate):
             Qt.AlignLeft | Qt.AlignVCenter | Qt.TextSingleLine,
             name,
         )
-        if locked:
-            glyph("lock", "faint").paint(painter, QRect(r.left() + 39 + fm.horizontalAdvance(name), center - 6, 12, 12))
 
         if cnt:
             meta = QFont(option.font)
@@ -379,6 +377,12 @@ class TopicDelegate(QStyledItemDelegate):
             painter.setFont(meta)
             painter.setPen(QColor(C["accent_text"] if selected else C["faint"]))
             painter.drawText(QRect(r.right() - 41, r.top(), 30, r.height()), Qt.AlignRight | Qt.AlignVCenter, str(cnt))
+        if getattr(self.parent(), "reordering", False):
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(C["accent_text"] if floating else C["faint"]))
+            for x in (r.right() - 12, r.right() - 8):
+                for y in (center - 4, center, center + 4):
+                    painter.drawEllipse(QRectF(x, y, 1.8, 1.8))
         painter.restore()
 
 
@@ -442,8 +446,8 @@ class NoteList(QListWidget):
         self._may_open = False
         self.card_opacity = 1.0
         self._reveal = QVariantAnimation(self)
-        self._reveal.setDuration(duration(FAST))
-        self._reveal.setStartValue(0.68)
+        self._reveal.setDuration(FAST)
+        self._reveal.setStartValue(0.55)
         self._reveal.setEndValue(1.0)
         self._reveal.setEasingCurve(QEasingCurve.OutCubic)
         self._reveal.valueChanged.connect(self._set_card_opacity)
@@ -452,7 +456,13 @@ class NoteList(QListWidget):
     def update_grid(self):
         if self.viewMode() != QListView.IconMode:
             return
-        width = max(1, self.viewport().width() - 14)
+        # Use the same width with or without the automatic scrollbar. A layout
+        # that changes as the bar appears can repeatedly create and remove it.
+        width = self.maximumViewportSize().width() - 14
+        if self.verticalScrollBarPolicy() == Qt.ScrollBarAsNeeded:
+            scrollbar = self.verticalScrollBar()
+            width -= scrollbar.style().pixelMetric(QStyle.PM_ScrollBarExtent, None, scrollbar)
+        width = max(1, width)
         columns = max(1, width // 264)
         size = QSize(width // columns, 166)
         if size != self.gridSize():
@@ -465,7 +475,7 @@ class NoteList(QListWidget):
     def reveal_cards(self):
         self._reveal.stop()
         if self.isVisible() and motion_enabled():
-            self._set_card_opacity(0.68)
+            self._set_card_opacity(0.55)
             self._reveal.start()
         else:
             self._set_card_opacity(1.0)
@@ -516,112 +526,223 @@ class NoteList(QListWidget):
 
 
 class TopicList(QListWidget):
-    """主题列表：内部可拖动排序，也接受从笔记列表拖来的笔记。
-
-    内部排序不走 Qt 默认的 InternalMove —— 那套会序列化 item 数据，
-    Python 对象（Topic）存不进 mime，拖完 data(UserRole) 就丢了。
-    这里自己 takeItem / insertItem，原对象原样搬运。
-    """
+    """接受拖来的笔记，并高亮接收该笔记的主题。"""
 
     notesDropped = pyqtSignal(list, str)
-    topicsReordered = pyqtSignal()
+    topicMoved = pyqtSignal(int, int)
+    reorderFinished = pyqtSignal()
 
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent, **kwargs)
-        self.setDragDropMode(QListWidget.DragDrop)
+        self.setDragDropMode(QListWidget.DropOnly)
         self.setDefaultDropAction(Qt.MoveAction)
-        self._drag_row = -1
-        self._drop_before = -1
         self._drop_target = -1
+        self.reordering = False
+        self.setUniformItemSizes(True)
+        self._press = None
+        self._source_row = self._target_row = -1
+        self._pointer = QPoint()
+        self._grab_y = 0
+        self._shift_start = {}
+        self._shift_end = {}
+        self._shift = QVariantAnimation(self)
+        self._shift.setDuration(170)
+        self._shift.setStartValue(0.0)
+        self._shift.setEndValue(1.0)
+        self._shift.setEasingCurve(QEasingCurve.OutCubic)
+        self._shift.valueChanged.connect(lambda _: self.viewport().update())
+        self._scroll_drag = QTimer(self, interval=16)
+        self._scroll_drag.timeout.connect(self._scroll_drag_edge)
 
-    def startDrag(self, actions):  # noqa: N802
-        self._drag_row = self.currentRow()
-        try:
-            super().startDrag(actions)
-        finally:
-            self._drag_row = -1
-            self._clear_drop_mark()
+    def set_reordering(self, enabled):
+        self.cancel_reorder()
+        self.reordering = enabled
+        self.viewport().setCursor(Qt.OpenHandCursor if enabled else Qt.ArrowCursor)
+        self.viewport().update()
+
+    def cancel_reorder(self):
+        self._press = None
+        self._source_row = self._target_row = -1
+        self._shift.stop()
+        self._shift_start.clear()
+        self._shift_end.clear()
+        self._scroll_drag.stop()
+        if self.reordering:
+            self.viewport().setCursor(Qt.OpenHandCursor)
+            self.viewport().update()
+
+    def mousePressEvent(self, event):  # noqa: N802
+        if self.reordering and event.button() == Qt.LeftButton:
+            index = self.indexAt(event.pos())
+            if index.isValid() and self.count() > 1:
+                self._press = event.pos()
+                self._source_row = self._target_row = index.row()
+                self._grab_y = event.pos().y() - self.visualRect(index).top()
+                self.setFocus(Qt.MouseFocusReason)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        if self._press is not None:
+            self._pointer = event.pos()
+            if not self._scroll_drag.isActive():
+                if (self._pointer - self._press).manhattanLength() < QApplication.startDragDistance():
+                    return
+                self.viewport().setCursor(Qt.ClosedHandCursor)
+                self._scroll_drag.start()
+            self._update_reorder_target()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        if self.reordering and event.button() == Qt.LeftButton:
+            if self._scroll_drag.isActive() and self._near_viewport(event.pos()):
+                self._pointer = event.pos()
+                self._update_reorder_target()
+                source, target = self._source_row, self._target_row
+            else:
+                source = target = -1
+            self.cancel_reorder()
+            if source != target:
+                self.topicMoved.emit(source, target)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def focusOutEvent(self, event):  # noqa: N802
+        self.cancel_reorder()
+        super().focusOutEvent(event)
+
+    def keyPressEvent(self, event):  # noqa: N802
+        if self.reordering and event.key() == Qt.Key_Escape:
+            if self._press is not None:
+                self.cancel_reorder()
+            else:
+                self.reorderFinished.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _near_viewport(self, point):
+        return self.viewport().rect().adjusted(-14, -14, 14, 14).contains(point)
+
+    def _offset(self, row):
+        end = self._shift_end.get(row, 0)
+        if self._shift.state() != QVariantAnimation.Running:
+            return end
+        start = self._shift_start.get(row, 0)
+        return round(start + (end - start) * self._shift.currentValue())
+
+    def _update_reorder_target(self):
+        first = self.visualItemRect(self.item(0))
+        height = first.height()
+        if height <= 0:
+            return
+        # Use the unshifted row slots for hit testing.
+        center = self._pointer.y() - self._grab_y + height / 2
+        target = max(0, min(self.count() - 1, int((center - first.top()) // height)))
+        if target != self._target_row:
+            source = self._source_row
+            self._target_row = target
+            step = -height if target > source else height
+            offsets = {row: step for row in range(min(source, target), max(source, target) + 1) if row != source}
+            self._shift_start = {row: value for row in self._shift_start.keys() | self._shift_end.keys()
+                                 if (value := self._offset(row))}
+            self._shift_end = offsets
+            self._shift.stop()
+            if motion_enabled():
+                self._shift.start()
+            else:
+                self._shift_start.clear()
+        self.viewport().update()
+
+    def _scroll_drag_edge(self):
+        point = self._pointer
+        if not self._near_viewport(point):
+            return
+        height = self.viewport().height()
+        edge = min(36, height // 3)
+        distance = min(point.y(), height - point.y())
+        if edge > 0 and distance < edge:
+            step = min(11, 2 + (edge - distance) * 9 // edge)
+            bar = self.verticalScrollBar()
+            current = bar.value()
+            bar.setValue(current + (-step if point.y() < edge else step))
+            if bar.value() != current:
+                self._update_reorder_target()
+
+    def _paint_reorder(self):
+        painter = QPainter(self.viewport())
+        painter.fillRect(self.viewport().rect(), QColor(C["paper_alt"]))
+        first = self.visualItemRect(self.item(0))
+        height = first.height()
+        if height <= 0:
+            return
+        start = max(0, -first.top() // height - 1)
+        end = min(self.count(), (self.viewport().height() - first.top()) // height + 2)
+        delegate = self.itemDelegate()
+        option = self.viewOptions()
+        state = option.state & ~QStyle.State_Selected
+
+        def paint_row(row, rect, floating=False):
+            option.rect = rect
+            option.state = state | QStyle.State_Selected if self.item(row).isSelected() else state
+            delegate.paint(painter, option, self.model().index(row, 0), reordering=True, floating=floating)
+
+        for row in range(start, end):
+            if row != self._source_row:
+                rect = self.visualItemRect(self.item(row))
+                rect.translate(0, self._offset(row))
+                paint_row(row, rect)
+        rect = QRect(first)
+        rect.moveTop(max(0, min(self.viewport().height() - height, self._pointer.y() - self._grab_y)))
+        paint_row(self._source_row, rect, floating=True)
 
     def _is_note(self, e) -> bool:
         return e.mimeData().hasFormat(NoteList.MIME)
 
-    def _is_self_drag(self, e) -> bool:
-        return e.source() is self and self._drag_row >= 0
-
     def dragEnterEvent(self, e):  # noqa: N802
-        if self._is_note(e) or self._is_self_drag(e):
+        if self._is_note(e):
             e.acceptProposedAction()
             return
-        super().dragEnterEvent(e)
+        e.ignore()
 
     def dragMoveEvent(self, e):  # noqa: N802
         if self._is_note(e):
             row = self.indexAt(e.pos()).row()
-            self._set_drop_mark(-1, row)
+            self._set_drop_mark(row)
             e.acceptProposedAction()
             return
-        if self._is_self_drag(e):
-            before = self._insertion_row(e.pos())
-            self._set_drop_mark(before if before not in (self._drag_row, self._drag_row + 1) else -1, -1)
-            e.acceptProposedAction()
-            return
-        super().dragMoveEvent(e)
+        e.ignore()
 
     def dragLeaveEvent(self, e):  # noqa: N802
-        self._clear_drop_mark()
+        self._set_drop_mark(-1)
         super().dragLeaveEvent(e)
 
-    def _set_drop_mark(self, before: int, target: int):
-        if (before, target) != (self._drop_before, self._drop_target):
-            self._drop_before, self._drop_target = before, target
+    def _set_drop_mark(self, target: int):
+        if target != self._drop_target:
+            self._drop_target = target
             self.viewport().update()
 
-    def _clear_drop_mark(self):
-        self._set_drop_mark(-1, -1)
-
     def paintEvent(self, event):  # noqa: N802
+        if self._scroll_drag.isActive():
+            self._paint_reorder()
+            return
         super().paintEvent(event)
-        if self._drop_before < 0 and self._drop_target < 0:
+        item = self.item(self._drop_target) if self._drop_target >= 0 else None
+        if item is None:
             return
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(QColor(C["accent_text"]), 2, Qt.SolidLine, Qt.RoundCap))
-        if self._drop_target >= 0 and (item := self.item(self._drop_target)) is not None:
-            painter.drawRoundedRect(QRectF(self.visualItemRect(item)).adjusted(3, 2, -4, -2), 7, 7)
-        elif self._drop_before >= 0 and self.count():
-            after = self._drop_before >= self.count()
-            rect = self.visualItemRect(self.item(min(self._drop_before, self.count() - 1)))
-            y = rect.bottom() - 1 if after else rect.top() + 1
-            painter.drawLine(8, y, self.viewport().width() - 8, y)
-
-    def _insertion_row(self, pos):
-        index = self.indexAt(pos)
-        if not index.isValid():
-            return self.count()
-        return index.row() + int(pos.y() > self.visualRect(index).center().y())
-
-    def _move_row(self, e) -> None:
-        src = self._drag_row
-        row = self._insertion_row(e.pos())
-        if src < 0 or row == src or row == src + 1:
-            return
-        item = self.takeItem(src)
-        if item is None:
-            return
-        if row > src:
-            row -= 1
-        self.insertItem(row, item)
-        self.setCurrentRow(row)
-        self.topicsReordered.emit()
+        painter.drawRoundedRect(QRectF(self.visualItemRect(item)).adjusted(3, 2, -4, -2), 7, 7)
 
     def dropEvent(self, e):  # noqa: N802
-        self._clear_drop_mark()
-        if self._is_self_drag(e) and not self._is_note(e):
-            e.acceptProposedAction()
-            self._move_row(e)
-            return
+        self._set_drop_mark(-1)
         if not self._is_note(e):
-            super().dropEvent(e)
+            e.ignore()
             return
         raw = bytes(e.mimeData().data(NoteList.MIME)).decode("utf-8", "ignore")
         it = self.itemAt(e.pos())

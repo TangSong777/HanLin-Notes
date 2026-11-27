@@ -27,6 +27,7 @@ from .title_bar import FramelessDialog, app_icon
 from .visuals import glyph
 
 
+
 def _button(text: str, name: str = "Plain") -> QPushButton:
     b = QPushButton(text)
     b.setObjectName(name)
@@ -325,6 +326,7 @@ class BackupDialog(FramelessDialog):
 
         self.list = QListWidget()
         self.list.setObjectName("BackupList")
+        self.list.setMouseTracking(True)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         lay.addWidget(self.list, 1)
 
@@ -413,7 +415,14 @@ class SettingsDialog(FramelessDialog):
     def __init__(self, parent, settings, theme_mode: str, sort_mode: str, section_index=0):
         super().__init__(parent, "设置")
         from PyQt5.QtCore import QSize
-        from PyQt5.QtWidgets import QComboBox, QScrollArea, QSpinBox, QTabWidget, QWidget
+        from PyQt5.QtWidgets import (
+            QCheckBox,
+            QComboBox,
+            QScrollArea,
+            QSpinBox,
+            QTabWidget,
+            QWidget,
+        )
 
         self.setWindowTitle("寒淋笔记 · 设置")
         self.setWindowIcon(app_icon())
@@ -498,6 +507,20 @@ class SettingsDialog(FramelessDialog):
             data_actions.addWidget(backups)
             data_actions.addStretch(1)
             data.addLayout(data_actions)
+
+        sync_head = QHBoxLayout()
+        sync_head.setSpacing(8)
+        sync_head.addWidget(QLabel("云同步", objectName="FieldHeading"))
+        sync_head.addStretch(1)
+        if parent is not None:
+            sync_open = _button("云同步…")
+            sync_open.clicked.connect(parent.open_sync_dialog)
+            sync_head.addWidget(sync_open)
+        data.addLayout(sync_head)
+
+        sync_hint = QLabel("配对后自动同步，防止换机或设备损坏时丢失笔记。", objectName="FieldLabel")
+        sync_hint.setWordWrap(True)
+        data.addWidget(sync_hint)
 
         self.spin_trash = QSpinBox()
         self.spin_trash.setRange(0, 3650)
@@ -711,6 +734,7 @@ class TrashTopicsDialog(FramelessDialog):
 
         self.list = QListWidget()
         self.list.setObjectName("TrashTopicList")
+        self.list.setMouseTracking(True)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list.itemDoubleClicked.connect(lambda _=None: self._restore())
         lay.addWidget(self.list, 1)
@@ -806,6 +830,7 @@ class DuplicatesDialog(FramelessDialog):
         lay.addWidget(head)
 
         self.tree = QTreeWidget()
+        self.tree.setMouseTracking(True)
         self.tree.setObjectName("DupeTree")
         self.tree.setHeaderLabels(["笔记", "主题", "时间"])
         self.tree.setRootIsDecorated(True)
@@ -957,11 +982,15 @@ class HistoryDialog(FramelessDialog):
         body = QHBoxLayout()
         body.setSpacing(12)
         self.list = QListWidget(objectName="HistoryList")
+        self.list.setMouseTracking(True)
         self.list.setFixedWidth(228)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list.currentRowChanged.connect(self._show_version)
         body.addWidget(self.list)
         self.preview = QTextBrowser(objectName="HistoryPreview")
+        from .theme import READING_SIZE, reading_font
+
+        self.preview.setFont(reading_font(self.preview.font(), READING_SIZE))
         self.preview.setOpenLinks(False)
         body.addWidget(self.preview, 1)
         lay.addLayout(body, 1)

@@ -4,9 +4,11 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from PyQt5.QtWidgets import QAction, QApplication, QMenu, QSystemTrayIcon
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QAction, QApplication, QSystemTrayIcon
 
 from .title_bar import app_icon
+from .tray_menu import TrayMenu
 
 
 class TrayIcon(QSystemTrayIcon):
@@ -15,17 +17,16 @@ class TrayIcon(QSystemTrayIcon):
     def __init__(self, window, parent=None):
         super().__init__(app_icon(), parent)
         self.window = window
-        self.setToolTip("寒淋笔记 · 本地笔记")
+        self.setToolTip("寒淋笔记·HanLin-Notes")
 
-        menu = QMenu()
-        act_show = QAction("打开寒淋笔记", menu)
-        act_show.triggered.connect(self.show_window)
-        menu.addAction(act_show)
-
+        menu = TrayMenu()
         act_new = QAction("新建笔记", menu)
         act_new.triggered.connect(self.new_note)
         menu.addAction(act_new)
-        menu.addSeparator()
+
+        act_show = QAction("显示窗口", menu)
+        act_show.triggered.connect(self.toggle_window)
+        menu.addAction(act_show)
 
         act_settings = QAction("设置…", menu)
         act_settings.triggered.connect(self.open_settings)
@@ -36,9 +37,20 @@ class TrayIcon(QSystemTrayIcon):
         menu.addAction(act_data)
         menu.addSeparator()
 
-        act_quit = QAction("退出寒淋笔记", menu)
+        act_quit = QAction("退出 HanLin-Notes", menu)
         act_quit.triggered.connect(self.quit_app)
         menu.addAction(act_quit)
+
+        def refresh_menu():
+            visible = self.window.isVisible() and not self.window.isMinimized()
+            act_show.setText("隐藏窗口" if visible else "显示窗口")
+            act_show.setData("eye-off" if visible else "eye")
+            act_new.setData("plus")
+            act_settings.setData("settings")
+            act_data.setData("file")
+            act_quit.setData("exit")
+
+        menu.aboutToShow.connect(refresh_menu)
 
         self.setContextMenu(menu)
         self._menu = menu  # 防止被回收
@@ -54,10 +66,17 @@ class TrayIcon(QSystemTrayIcon):
         if w is None:
             return
         if w.isMinimized():
-            w.showNormal()
+            w.setWindowState(w.windowState() & ~Qt.WindowMinimized)
         w.show()
-        w.raise_()
-        w.activateWindow()
+        target = QApplication.activeModalWidget() or w
+        target.raise_()
+        target.activateWindow()
+
+    def toggle_window(self):
+        if self.window.isVisible() and not self.window.isMinimized():
+            self.window.showMinimized()
+        else:
+            self.show_window()
 
     def new_note(self):
         self.show_window()
@@ -81,10 +100,25 @@ class TrayIcon(QSystemTrayIcon):
         if self.window is not None:
             self.window.open_settings()
 
+    def detach(self):
+        self.hide()
+        self.setContextMenu(None)
+        self._menu.close()
+        self._menu.deleteLater()
+        self.window = None
+
     def quit_app(self):
         w = self.window
         if w is not None:
+            if QApplication.activeModalWidget() is not None:
+                return
+            if getattr(w, "autosync", None) is not None and w.autosync.running():
+                self.show_window()
+                w._toast("后台同步正在运行，请完成后再退出。")
+                return
             w._quitting = True
+            if getattr(w, "autosync", None) is not None:
+                w.autosync.stop()
             try:
                 w.save_now()
                 w._save_geometry()

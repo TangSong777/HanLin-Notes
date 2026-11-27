@@ -44,7 +44,6 @@ PRUNE = [
     "Qt5VirtualKeyboard_conda.dll",
     "Qt5WebSockets_conda.dll",
     "Qt5DBus_conda.dll",
-    "Qt5Network_conda.dll",
     "libGLESv2.dll",
     "libEGL.dll",
 ]
@@ -208,8 +207,16 @@ def main() -> int:
     build_setup(dist, app_dir, iscc)
     if not args.no_sync:
         target = (args.desktop or (desktop_dir() / "HanLin-Notes")).resolve()
-        count, note = sync_install(app_dir, target)
-        print(f"日常使用目录：{note}（{count} 个程序文件，Data/ 未改动）")
+        updater = ROOT.parent / "Update-HanLin.ps1"
+        canonical = ROOT.parent.parent / "HanLin-Notes"
+        if updater.is_file() and target == canonical.resolve():
+            subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(updater), "-App", "Notes", "-BuiltPath", str(app_dir)],
+                check=True,
+            )
+        else:
+            count, note = sync_install(app_dir, target)
+            print(f"日常使用目录：{note}（{count} 个程序文件，Data/ 未改动）")
     return 0
 
 

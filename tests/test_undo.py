@@ -1,6 +1,7 @@
 """撤销 / 重做：排序、归档、回收站、移动、主题操作都要能 Ctrl+Z 撤回。"""
 import shutil
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -9,7 +10,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtTest import QTest
 from PyQt5.QtWidgets import QApplication, QPlainTextEdit
 
-from timodesk.store import Library
+from timodesk.store import Library, to_iso
 from timodesk.ui.main_window import MainWindow
 from timodesk.ui.theme import app_qss
 
@@ -18,9 +19,16 @@ app.setStyleSheet(app_qss())
 
 ROOT = Path("worklib_undo")
 shutil.rmtree(ROOT, ignore_errors=True)
-shutil.copytree("D:/桌面/HanLin-Notes/Data", ROOT, ignore=shutil.ignore_patterns("backup"))
 
 lib = Library(ROOT).load()
+primary = lib.add_topic("Z 测试主题")
+lib.add_topic("A 测试主题")
+for i in range(12):
+    note = lib.add_note(primary.id, title=f"测试笔记 {i:02}", content=f"测试正文 {i}")
+    note.created_at = note.updated_at = to_iso(datetime(2026, 1, 1) + timedelta(days=i))
+discarded = lib.add_note(primary.id, content="回收站试件")
+lib.delete_note(discarded.id)
+lib.save()
 w = MainWindow(lib)
 ok = fail = 0
 
@@ -40,17 +48,20 @@ def nid(i=0):
 
 
 # ---------- 1 排序方式 ----------
+w.view = ("topic", primary.id)
 w.set_sort("updated")
-before = w.sort_mode
+before_ids = [n.id for n in w._current_notes()]
 w.set_sort("title")
 check("切换排序生效", w.sort_mode == "title")
 check("排序进撤销栈", w.undo_stack.can_undo())
 w.undo()
-check("撤销排序回到 updated", w.sort_mode == updated_check if (updated_check := "updated") else False)
-check("撤销后列表也回到原顺序", [n.id for n in w._current_notes()] == [n.id for n in lib.sorted_notes(state="active", order="updated")])
+check("撤销排序回到 updated", w.sort_mode == "updated")
+check("撤销后列表也回到原顺序", [n.id for n in w._current_notes()] == before_ids)
 w.redo()
 check("重做排序", w.sort_mode == "title")
 w.undo()
+w.view = ("all", None)
+w._reload_notes()
 
 # ---------- 2 主题排序 ----------
 ids_before = [t.id for t in sorted(w.lib.topics.values(), key=lambda t: t.order) if t.state != "trash"]
@@ -208,5 +219,7 @@ app.processEvents()
 check("Ctrl+Shift+Z 重做排序", w.sort_mode == other)
 
 print(f"\n{ok}/{ok + fail} PASS" if not fail else f"\n{ok}/{ok + fail}，{fail} 项失败")
+w.close()
+app.processEvents()
 shutil.rmtree(ROOT, ignore_errors=True)
 sys.exit(1 if fail else 0)

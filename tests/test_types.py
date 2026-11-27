@@ -32,8 +32,7 @@ def main():
     topic = lib.add_topic("测试主题")
     other = lib.add_topic("另一个主题")
 
-    # 找一个真实图片做附件
-    src_img = next(Path("testlib/attachments").glob("*")) if Path("testlib/attachments").exists() else None
+    src_img = Path(__file__).resolve().parent / "fixtures" / "viewer.png"
 
     # ---- 1. 便签 ----
     n1 = lib.add_note(topic.id, "note", "便签正文第一行\n第二行 **加粗**", None)
@@ -45,9 +44,7 @@ def main():
 
     # ---- 3. 图库 ----
     n3 = lib.add_note(topic.id, "gallery", "", None)
-    if src_img:
-        rel = lib.import_attachment(src_img)
-        n3.images = [rel]
+    n3.images = [lib.import_attachment(src_img)]
     n3.description = "图库说明文字"
 
     # ---- 4. 链接 ----

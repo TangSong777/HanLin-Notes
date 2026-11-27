@@ -23,7 +23,6 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import (
     QColor,
     QDesktopServices,
-    QFont,
     QImage,
     QKeySequence,
     QPixmap,
@@ -62,8 +61,8 @@ from PyQt5.QtWidgets import (
 from ..render import TASK_RE, render
 from ..store import date_countdown, TYPE_LABELS, Library, Note
 from .dialogs import error as dlg_error
-from .theme import C, NOTE_COLORS, color_icon
-from .motion import FAST, fade_in
+from .theme import C, NOTE_COLORS, READING_SIZE, color_icon, reading_font
+from .motion import FAST, SmoothWheel, fade_in
 from .visuals import glyph
 from .widgets import AutoFadeScrollBar, human_time
 
@@ -160,11 +159,7 @@ class MarkdownEdit(QPlainTextEdit):
         self.setObjectName("Editor")
         self.setPlaceholderText(placeholder)
         self.setTabChangesFocus(True)
-        from .theme import C
-
-        f = QFont(C["font_text"])
-        f.setPixelSize(15)
-        self.setFont(f)
+        self.setFont(reading_font(self.font(), READING_SIZE))
 
     def insertFromMimeData(self, source):  # noqa: N802
         if source.hasImage():
@@ -328,6 +323,8 @@ class NoteEditor(QWidget):
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(280)
         self._preview_timer.timeout.connect(self._refresh_preview)
+        # 预览是否落后于正文（不可见时跳过渲染，切回来再补）
+        self._preview_stale = True
 
     # ================= 文档 =================
     def _build_ui(self):
@@ -495,10 +492,13 @@ class NoteEditor(QWidget):
         self.splitter.setChildrenCollapsible(False)
 
         self.edit = MarkdownEdit("开始写点什么……")
+        self._source_wheel = SmoothWheel(self.edit, wheel_scale=0.5, wheel_duration=175)
         self.edit.textChanged.connect(self._on_text_changed)
         self.edit.imageDropped.connect(self._insert_image_file)
         self.edit_panel = self._text_panel(self.edit, "Markdown", "SourceSheet")
         self.preview = QTextBrowser(objectName="Preview")
+        self.preview.setFont(reading_font(self.preview.font(), READING_SIZE))
+        self._preview_wheel = SmoothWheel(self.preview, wheel_scale=0.5, wheel_duration=175)
         self.preview.setOpenExternalLinks(True)
         self.preview.setOpenLinks(False)
         self.preview.anchorClicked.connect(self._on_anchor)
@@ -972,7 +972,10 @@ class NoteEditor(QWidget):
         self._emit()
         if self.note and self.note.type == "note":
             self._update_meta_labels()
-        self._preview_timer.start()
+        if self.preview.isVisible():
+            self._preview_timer.start()
+        else:
+            self._preview_stale = True
 
     def _on_desc_changed(self):
         self._emit()
@@ -1383,6 +1386,7 @@ class NoteEditor(QWidget):
         if not self.note:
             return
         self.preview.setHtml(render(self.edit.toPlainText(), self.lib.root, "开始写点什么……"))
+        self._preview_stale = False
         self._paint_highlight()
         self._update_meta_labels()
 
@@ -1415,7 +1419,8 @@ class NoteEditor(QWidget):
         if term == getattr(self, "_highlight", ""):
             return
         self._highlight = term
-        if self.note and self.note.type in ("note", "article"):
+        if self.note and self.note.type in ("note", "article") and self._preview_stale:
+            # 预览已落后（正文还没来得及重渲染），顺手补一次，避免高亮落在旧文本上
             self._refresh_preview()
         else:
             self._paint_highlight()
@@ -1432,7 +1437,13 @@ class NoteEditor(QWidget):
             self._refresh_preview()
         elif mode == "split" and previous != mode:
             self.splitter.setSizes([1, 1])
+            if self._preview_stale:
+                self._refresh_preview()
         if focus:
+            if previous == "edit" and mode != "edit":
+                fade_in(self.preview_panel, FAST, 0.72)
+            elif previous == "preview" and mode != "preview":
+                fade_in(self.edit_panel, FAST, 0.72)
             self.focus_document()
 
     def refresh_theme(self):

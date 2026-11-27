@@ -7,7 +7,7 @@ from PyQt5.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, 
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 from PyQt5.QtWidgets import QGraphicsOpacityEffect, QLabel, QStackedWidget, QWidget
 
-from .motion import BASE, FAST, duration, enabled as motion_enabled
+from .motion import FAST, enabled as motion_enabled
 from .theme import C
 
 
@@ -39,6 +39,10 @@ _STROKES = {
     "attention": (((8, 4.5), (8, 8.5)), ((8, 11.5), (8, 11.6))),
     "settings": (((3, 4), (13, 4)), ((3, 8), (13, 8)), ((3, 12), (13, 12)),
                  ((6, 2.5), (6, 5.5)), ((10, 6.5), (10, 9.5)), ((7.5, 10.5), (7.5, 13.5))),
+    "eye": (((2, 8), (5, 5), (8, 4), (11, 5), (14, 8), (11, 11), (8, 12), (5, 11), (2, 8)),),
+    "eye-off": (((2, 8), (5, 5), (8, 4), (11, 5), (14, 8), (11, 11), (8, 12), (5, 11), (2, 8)),
+                ((3, 3), (13, 13))),
+    "exit": (((7, 3), (3, 3), (3, 13), (7, 13)), ((6, 8), (14, 8)), ((11, 5), (14, 8), (11, 11))),
 }
 _BOXES = {
     "all": (3.5, 2, 10, 12),
@@ -50,6 +54,7 @@ _BOXES = {
     "date": (2.5, 3.5, 11, 10),
 }
 _ELLIPSES = {
+    "eye": (6.5, 6.5, 3, 3),
     "search": (2.5, 2.5, 9, 9),
     "account": (2.5, 4.5, 6, 6),
     "gallery": (9.5, 5.3, 0.8, 0.8),
@@ -97,7 +102,9 @@ class _PageSnapshot(QWidget):
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)
         painter.setOpacity(1.0 - self.progress)
-        painter.drawPixmap(QPointF(-14 * self.direction * self.progress, 0), self.pixmap)
+        dpr = self.pixmap.devicePixelRatio()
+        offset = round(-8 * self.direction * self.progress * dpr) / dpr
+        painter.drawPixmap(QPointF(offset, 0), self.pixmap)
 
 
 class WorkspaceStack(QStackedWidget):
@@ -107,7 +114,7 @@ class WorkspaceStack(QStackedWidget):
         super().__init__(parent)
         self._snapshot = None
         self._animation = QVariantAnimation(self)
-        self._animation.setDuration(duration(BASE))
+        self._animation.setDuration(160)
         self._animation.setStartValue(0.0)
         self._animation.setEndValue(1.0)
         self._animation.setEasingCurve(QEasingCurve.OutCubic)
@@ -164,7 +171,7 @@ class Notice(QLabel):
         self._opacity = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._opacity)
         self._motion = QPropertyAnimation(self._opacity, b"opacity", self)
-        self._motion.setDuration(duration(FAST))
+        self._motion.setDuration(FAST)
         self._motion.setEasingCurve(QEasingCurve.OutCubic)
         self._motion.finished.connect(self._hide_if_faded)
         self.hide()

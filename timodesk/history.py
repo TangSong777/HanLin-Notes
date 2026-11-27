@@ -108,6 +108,19 @@ class NoteHistory:
         out.sort(key=lambda v: v.stamp, reverse=True)
         return out
 
+    def _latest(self, note_id: str) -> tuple[Path, dict] | None:
+        """最新一版：文件名是定宽时间戳，字典序即时间序，不必解析全部版本。"""
+        d = self.note_dir(note_id)
+        if not d.is_dir():
+            return None
+        for name in sorted((p.name for p in d.glob("*.json")), reverse=True):
+            path = d / name
+            try:
+                return path, json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+        return None
+
     def read(self, note_id: str, stamp: str) -> dict | None:
         p = self.note_dir(note_id) / f"{stamp}.json"
         try:
@@ -143,18 +156,18 @@ class NoteHistory:
         if not text.strip() and not data["title"].strip():
             return False  # 空白笔记不值得留档
 
-        latests = self.versions(note.id)
-        if latests:
-            newest = latests[0]
-            try:
-                prev = json.loads(newest.path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                prev = {}
+        latest = self._latest(note.id)
+        if latest is not None:
+            newest_path, prev = latest
             if str(prev.get("content") or "") == text:
                 return False  # 内容没变，没必要再来一份
-            if time.time() - newest.when < self.merge:
+            try:
+                when = datetime.fromisoformat(str(prev.get("at") or "").replace("Z", "+00:00")).timestamp()
+            except (ValueError, AttributeError):
+                when = 0.0
+            if time.time() - when < self.merge:
                 # 短时间内连续保存：直接覆盖最新那版，避免历史被刷爆
-                self._write(newest.path, data)
+                self._write(newest_path, data)
                 return True
 
         self.note_dir(note.id).mkdir(parents=True, exist_ok=True)
@@ -172,10 +185,12 @@ class NoteHistory:
             tmp.unlink(missing_ok=True)
 
     def _prune(self, note_id: str) -> None:
-        vs = self.versions(note_id)
-        for v in vs[self.keep :]:
+        d = self.note_dir(note_id)
+        if not d.is_dir():
+            return
+        for name in sorted((p.name for p in d.glob("*.json")), reverse=True)[self.keep :]:
             try:
-                v.path.unlink()
+                (d / name).unlink()
             except OSError:
                 pass
 
