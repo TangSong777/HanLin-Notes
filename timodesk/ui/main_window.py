@@ -1774,8 +1774,8 @@ class MainWindow(QMainWindow):
         if want_font != previous_font:
             self.apply_font(want_font)
         sync_cfg = self.settings.get("sync") or {}
-        if sync_cfg.get("enabled") and sync_cfg.get("autoSync") and not self._sync_paired():
-            self._toast("云同步已开启，但还没有配对：到「设置 → 数据 → 配对与同步…」完成配对")
+        if sync_cfg.get("enabled") and sync_cfg.get("autoSync", True) and not self._sync_paired():
+            self._toast("到「设置 → 数据 → 云同步…」完成配对后，每 10 分钟自动同步。")
         self.autosync.note_settings_changed()
 
     def apply_font(self, family: str) -> None:

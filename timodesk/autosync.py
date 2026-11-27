@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import socket
 import tempfile
@@ -35,7 +36,7 @@ def time_stamp() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 FIRST_CHECK_MS = 20_000
-DEFAULT_INTERVAL_MINUTES = 10
+CHECK_INTERVAL_MS = 10 * 60 * 1000
 
 
 def status_text(result) -> str:
@@ -83,12 +84,11 @@ class AutoSync(QObject):
         self.last_status = ""
         self._restore_guard = False
         self._failures = 0
-        self._first_done = False
         self._paused = False
+        self._next_check = None
         self._timer = QTimer(self)
-        self._timer.setSingleShot(False)
+        self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.check)
-        self._apply_interval()
 
     # ---------------- 配置 ----------------
     def _settings(self):
@@ -104,19 +104,14 @@ class AutoSync(QObject):
             return False
         return bool(cfg.get("autoSync", True))
 
-    def _apply_interval(self) -> None:
-        cfg = self.config()
-        minutes = int(cfg.get("autoSyncMinutes") or DEFAULT_INTERVAL_MINUTES)
-        minutes = max(1, min(minutes, 24 * 60))
-        self._timer.setInterval(minutes * 60 * 1000)
-
     # ---------------- 生命周期 ----------------
     def start(self) -> None:
-        self._apply_interval()
-        _trace(f"start enabled={self.enabled()} interval={self._timer.interval()}ms")
-        if self.enabled():
-            self._timer.start()
-            QTimer.singleShot(FIRST_CHECK_MS, self.check)
+        if self.enabled() and not self._paused:
+            now = time.monotonic()
+            if self._next_check is None:
+                self._next_check = now + FIRST_CHECK_MS / 1000
+            remaining = math.ceil((self._next_check - now) * 1000)
+            self._timer.start(max(0, remaining))
 
     def stop(self) -> None:
         self._timer.stop()
@@ -133,13 +128,8 @@ class AutoSync(QObject):
         self.restart()
 
     def restart(self) -> None:
-        was = self._timer.isActive()
         self.stop()
-        self._apply_interval()
-        if self.enabled():
-            self._timer.start()
-            if not was and not self._first_done:
-                QTimer.singleShot(FIRST_CHECK_MS, self.check)
+        self.start()
 
     def note_settings_changed(self) -> None:
         """设置页保存后调用：重新读取间隔，必要时启停。"""
@@ -150,13 +140,20 @@ class AutoSync(QObject):
         if self._paused:
             return
         _trace("check: begin")
-        if self._thread is not None and self._thread.isRunning():
-            _trace("check: thread busy")
-            return
         if not self.enabled():
             _trace("check: disabled")
             self._timer.stop()
             return
+        if self._next_check is not None and time.monotonic() < self._next_check:
+            # Coarse timers may fire a little early.
+            self.start()
+            return
+        self._next_check = time.monotonic() + CHECK_INTERVAL_MS / 1000
+        self.start()
+        if self._thread is not None:
+            _trace("check: thread busy")
+            return
+        cfg = self.config()
         window = self.window
         if getattr(window, "_quitting", False):
             _trace("check: quitting")
@@ -167,7 +164,6 @@ class AutoSync(QObject):
         except Exception as exc:  # noqa: BLE001 - 保存失败时跳过本轮
             _trace(f"check: flush failed {exc!r}")
             return
-        cfg = self.config()
         from .sync import SyncClient, SyncConfig
 
         config = SyncConfig(
@@ -217,7 +213,6 @@ class AutoSync(QObject):
     def _done(self, result) -> None:
         _trace(f"done: {result}")
         self._thread = None
-        self._first_done = True
         self._failures = 0
         state = (result or {}).get("state")
         self._release_restore(state == "pulled")
@@ -229,7 +224,6 @@ class AutoSync(QObject):
     def _failed(self, exc) -> None:
         self._release_restore()
         self._thread = None
-        self._first_done = True
         self._failures += 1
         self.last_status = "同步稍后重试，本地内容已保留。"
         _trace(f"failed: {type(exc).__name__}")

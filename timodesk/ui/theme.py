@@ -540,6 +540,8 @@ QTabWidget#SeriesSettingsTabs QTabBar::tab:selected {{
 }}
 QTabWidget#SeriesSettingsTabs QTabBar::tab:selected:focus {{ border-color: {C['accent_text']}; }}
 #SeriesSettingsScroll, #SeriesSettingsPage {{ background: {C['card']}; }}
+#SeriesSettingsPage QLabel#FieldLabel {{ font-size: {int(14 * s)}px; }}
+#SeriesSettingsPage QLabel#FieldHeading {{ font-size: {int(16 * s)}px; }}
 QLabel#SeriesSettingsError {{ color: {C['accent_text']}; }}
 QLineEdit#PathBox {{ padding: 9px 11px; }}
 QLabel#ImportSummary {{ font-size: {int(15 * s)}px; font-weight: 600; }}

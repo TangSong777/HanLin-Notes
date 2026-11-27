@@ -120,6 +120,11 @@ class SyncDialog(OperationDialog):
         self.credential_path = credential_path
         self.restored = False
         self.paired = False
+        self.body.setStyleSheet("""
+            QLabel#FieldHeading { font-size: 17px; }
+            QLabel#FieldLabel { font-size: 15px; }
+            QLineEdit, QPushButton { font-size: 15px; }
+        """)
 
         lay = QVBoxLayout(self.body)
         lay.setContentsMargins(24, 16, 24, 18)
@@ -147,7 +152,7 @@ class SyncDialog(OperationDialog):
         lay.addWidget(self.pair_fields)
         self.pair_fields.hide()
 
-        privacy = QLabel("配对后会自动同步。切换本地库前会备份正文和附件。"
+        privacy = QLabel("自动同步间隔 10 分钟，可在设置关闭。切换本地库前会备份正文和附件。"
                          "服务器可读取同步内容，换机后请重新配对。", objectName="FieldLabel")
         privacy.setWordWrap(True)
         lay.addWidget(privacy)
@@ -160,7 +165,7 @@ class SyncDialog(OperationDialog):
         self.primary.clicked.connect(self._activate)
         footer.addWidget(self.primary)
         lay.addLayout(footer)
-        self.setFixedSize(500, 344)
+        self.setFixedSize(500, 374)
         self.add_edge()
         factory = self._factory()
         self._run(lambda: factory().paired, self._show_state)
@@ -174,7 +179,8 @@ class SyncDialog(OperationDialog):
 
     def _show_state(self, paired):
         self.paired = bool(paired)
-        self.state.setText("自动同步已开启" if paired else "尚未配对")
+        automatic = bool((self.settings.get("sync") or {}).get("autoSync", True))
+        self.state.setText(("自动同步已开启" if automatic else "自动同步已关闭") if paired else "尚未配对")
         self.pair_fields.setVisible(not paired)
         self.primary.setText("立即同步" if paired else "配对")
         if paired:
@@ -219,10 +225,11 @@ class SyncDialog(OperationDialog):
 
         def done(_result):
             config = dict(self.settings.get("sync") or {})
-            config.update(enabled=True, autoSync=True, serverUrl=server)
+            config.update(enabled=True, serverUrl=server)
+            config.setdefault("autoSync", True)
             self.settings.update({"sync": config})
             self._show_state(True)
-            self.detail.setText("配对成功，将自动同步。")
+            self.detail.setText("配对成功。" if not config["autoSync"] else "配对成功，每 10 分钟自动同步。")
 
         self._run(lambda: factory().pair(code), done, "正在配对…")
 

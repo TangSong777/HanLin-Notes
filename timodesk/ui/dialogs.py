@@ -518,7 +518,10 @@ class SettingsDialog(FramelessDialog):
             sync_head.addWidget(sync_open)
         data.addLayout(sync_head)
 
-        sync_hint = QLabel("配对后自动同步，防止换机或设备损坏时丢失笔记。", objectName="FieldLabel")
+        self.chk_auto_sync = QCheckBox("每 10 分钟自动云同步")
+        self.chk_auto_sync.setChecked(bool((settings.get("sync") or {}).get("autoSync", True)))
+        data.addWidget(self.chk_auto_sync)
+        sync_hint = QLabel("配对后生效。关闭后仍可手动同步。", objectName="FieldLabel")
         sync_hint.setWordWrap(True)
         data.addWidget(sync_hint)
 
@@ -575,11 +578,14 @@ class SettingsDialog(FramelessDialog):
         self.theme_changed = self.cmb_theme.currentData() != self._orig_theme
 
     def apply(self) -> None:
+        sync = dict(self.settings.get("sync") or {})
+        sync["autoSync"] = self.chk_auto_sync.isChecked()
         self.settings.update({
             "theme_mode": self.cmb_theme.currentData(),
             "font_family": self.cmb_font.currentData(),
             "trash_days": int(self.spin_trash.value()),
             "sort_mode": self.cmb_sort.currentData(),
+            "sync": sync,
         })
 
     def accept(self) -> None:
