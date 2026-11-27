@@ -46,15 +46,22 @@ check("第一次导出有图片引用", len(refs1) == 1)
 check("第一次引用文件存在", (OUT / refs1[0]).exists())
 check("第一次复制了 1 张", c1["attachments"] == 1)
 
-# 再导一次到同一目录：同名文件已存在，应该改成 -2 并同步改正文
+# 再导出同一份内容，继续引用同一个图片文件。
 c2 = export_markdown_tree(lib, OUT)
 md2 = next(OUT.glob("主题/*.md")).read_text(encoding="utf-8")
 refs2 = re.findall(r"\]\(\.\./(attachments/[^)\s]+)\)", md2)
 check("第二次导出仍有引用", len(refs2) == 1)
 check("第二次引用文件存在", (OUT / refs2[0]).exists())
-check("第二次换了文件名", refs2[0] != refs1[0])
-check("第二次复制了 1 张", c2["attachments"] == 1)
+check("第二次复用原文件名", refs2[0] == refs1[0])
+check("第二次不复制相同图片", c2["attachments"] == 0)
 check("旧文件还在", (OUT / refs1[0]).exists())
+
+# 同名内容真正变化时才分配副本并更新新导出的引用。
+old_image = (OUT / refs1[0]).read_bytes()
+lib.attachment_abspath(rel).write_bytes(b"other image")
+changed = export_markdown_tree(lib, OUT)
+check("同名异内容有新图片", changed["attachments"] == 1)
+check("原来的图片字节仍保留", (OUT / refs1[0]).read_bytes() == old_image)
 
 # 引用一张根本不存在的图：保留引用，但计入 missing 并在 README 说明
 n2 = lib.add_note(t.id, "note", title="缺图")

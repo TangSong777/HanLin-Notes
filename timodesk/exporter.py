@@ -4,12 +4,15 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import re
-import shutil
+import tempfile
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 
-from .store import Library, Note, TYPE_CODE, TYPE_LABELS, now_iso
+from .store import Library, Note, TYPE_CODE, TYPE_LABELS, note_fingerprint, now_iso
+from .transfer import copy_attachment, digest_index, file_digest, rewrite_links, rewrite_note, stream_digest
 
 ILLEGAL = re.compile(r'[\\/:*?"<>|\r\n\t]')
 STATE_DIR = {"active": "active", "archived": "archived", "trash": "trash"}
@@ -85,11 +88,57 @@ def _readme(counts: dict) -> str:
     )
 
 
-def export_zip(lib: Library, out: str | Path) -> tuple[Path, dict]:
+def _export_notes(lib: Library, aliases: dict[str, str], *, dedupe=True, include_trash=True):
+    seen = set()
+    for source in lib.notes.values():
+        if not include_trash and source.state == "trash":
+            continue
+        content = rewrite_links(lib.content(source.id), aliases)
+        note = rewrite_note(source, aliases)
+        if dedupe:
+            key = (note.topic_id, note.state, note.color, note.remind_at, bool(note.pinned_at),
+                   note.description, content, note_fingerprint(note, content))
+            if key in seen:
+                continue
+            seen.add(key)
+        yield note, content
+
+
+@contextmanager
+def _checked_zip(out: Path, attachment_hashes: dict[str, str]):
+    with tempfile.NamedTemporaryFile(dir=out.parent, suffix=".zip", delete=False) as handle:
+        temp = Path(handle.name)
+    try:
+        with zipfile.ZipFile(temp, "w", zipfile.ZIP_DEFLATED) as archive:
+            yield archive
+        with zipfile.ZipFile(temp) as archive:
+            if archive.testzip() is not None:
+                raise OSError("导出包未通过完整性校验")
+            for name, expected in attachment_hashes.items():
+                with archive.open(f"attachments/{name}") as attachment:
+                    if stream_digest(attachment) != expected:
+                        raise OSError(f"导出时附件发生变化：{name}")
+        os.replace(temp, out)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def export_zip(lib: Library, out: str | Path, *, dedupe: bool = True) -> tuple[Path, dict]:
     """导出为笔记包 ZIP（兼容外部导出格式），返回 (路径, 统计)。"""
     out = Path(out)
     if out.suffix.lower() != ".zip":
         out = out.with_suffix(".zip")
+    aliases = {}
+    attachment_hashes = {}
+    att_dir = lib.attachments_dir
+    by_digest = {}
+    if att_dir.is_dir():
+        for file in sorted(att_dir.iterdir()):
+            if file.is_file() and not file.is_symlink():
+                digest = file_digest(file)
+                canonical = by_digest.setdefault(digest, file.name) if dedupe else file.name
+                aliases[file.name] = canonical
+                attachment_hashes[canonical] = digest
 
     topics_json = []
     for t in sorted(lib.topics.values(), key=lambda x: (x.order, x.created_at)):
@@ -114,7 +163,7 @@ def export_zip(lib: Library, out: str | Path) -> tuple[Path, dict]:
     docs_json = []
     accounts_rows = []
 
-    for n in lib.notes.values():
+    for n, content in _export_notes(lib, aliases, dedupe=dedupe):
         state = STATE_DIR.get(n.state, "active")
         tname = safe_name(topic_names.get(n.topic_id, ""), "未分类")
         sub = f"{tname}__{short_id(n.topic_id)}"
@@ -132,12 +181,11 @@ def export_zip(lib: Library, out: str | Path) -> tuple[Path, dict]:
             i += 1
         used.add(k)
 
-        content = lib.content(n.id)
         files[rel] = note_markdown(n, content)
 
         ext: dict = {}
         if n.type == "gallery":
-            ext["images"] = [f"timo://file-store/{Path(r).name}" for r in n.images]
+            ext["images"] = [f"timo://file-store/{Path(r).name}" if r.startswith("attachments/") else r for r in n.images]
         elif n.type == "link":
             ext["url"] = n.url or ""
         elif n.type == "account":
@@ -214,25 +262,23 @@ def export_zip(lib: Library, out: str | Path) -> tuple[Path, dict]:
                 "deletedAt": n.deleted_at,
                 "archivedAt": n.archived_at,
                 "pinnedAt": n.pinned_at,
+                "remindAt": n.remind_at,
                 "normalized": normalized,
                 "raw": raw,
             }
         )
 
     attachments_meta = []
-    att_dir = lib.attachments_dir
-    if att_dir.exists():
-        for f in sorted(att_dir.iterdir()):
-            if f.is_file():
-                attachments_meta.append(
-                    {
-                        "uri": f"timo://file-store/{f.name}",
-                        "path": f"attachments/{f.name}",
-                        "originalName": f.name,
-                        "suffix": f.suffix.lstrip("."),
-                        "size": f.stat().st_size,
-                    }
-                )
+    for name, digest in attachment_hashes.items():
+        f = att_dir / name
+        attachments_meta.append({
+            "uri": f"timo://file-store/{f.name}",
+            "path": f"attachments/{f.name}",
+            "originalName": f.name,
+            "suffix": f.suffix.lstrip("."),
+            "size": f.stat().st_size,
+            "sha256": digest,
+        })
 
     counts = {
         "topics": len(topics_json),
@@ -253,7 +299,7 @@ def export_zip(lib: Library, out: str | Path) -> tuple[Path, dict]:
         "attachments": attachments_meta,
     }
 
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    with _checked_zip(out, attachment_hashes) as z:
         z.writestr("README.txt", _readme(counts))
         z.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         z.writestr(
@@ -273,10 +319,8 @@ def export_zip(lib: Library, out: str | Path) -> tuple[Path, dict]:
             z.writestr("content/accounts.csv", "\ufeff" + buf.getvalue())
         for rel, text in files.items():
             z.writestr(rel, text)
-        if att_dir.exists():
-            for f in att_dir.iterdir():
-                if f.is_file():
-                    z.write(f, f"attachments/{f.name}")
+        for name in attachment_hashes:
+            z.write(att_dir / name, f"attachments/{name}")
     return out, counts
 
 
@@ -285,7 +329,8 @@ def _md_body(n: Note, content: str) -> str:
     """把一条笔记摊平成纯 Markdown（图片用 ../attachments/ 相对路径）。"""
 
     def img(rel: str) -> str:
-        return f"![](../attachments/{Path(rel).name})"
+        path = f"../attachments/{Path(rel).name}" if rel.startswith("attachments/") else rel
+        return f"![]({path})"
 
     def fix_refs(text: str) -> str:
         """正文里的 attachments/ 是相对数据目录的，导出成文件后要往上退一级。"""
@@ -328,16 +373,28 @@ def _md_body(n: Note, content: str) -> str:
 
 def export_markdown_tree(lib: Library, out: str | Path, progress=None) -> dict:
     """把整个库导出成「主题/笔记.md + attachments/」的普通 Markdown 目录。"""
+    created = []
+    try:
+        return _export_markdown_tree(lib, Path(out), progress, created)
+    except BaseException:
+        for path in reversed(created):
+            path.unlink(missing_ok=True)
+        raise
+
+
+def _export_markdown_tree(lib: Library, out: Path, progress, created) -> dict:
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     att_dir = out / "attachments"
+    if att_dir.is_symlink():
+        raise OSError("导出目录中的 attachments 不能是链接")
     att_dir.mkdir(exist_ok=True)
 
     topics = sorted(
         [t for t in lib.topics.values() if t.state != "trash"],
         key=lambda t: (t.order, t.created_at),
     )
-    used_dirs: set[str] = set()
+    used_dirs: set[str] = {"attachments", "readme.md", "（未分类）"}
     dir_of: dict[str, Path] = {}
     for t in topics:
         name = safe_name(t.name, "未命名主题")
@@ -346,24 +403,25 @@ def export_markdown_tree(lib: Library, out: str | Path, progress=None) -> dict:
             cand, i = f"{name}-{i}", i + 1
         used_dirs.add(cand.lower())
         d = out / cand
+        if d.is_symlink():
+            raise OSError(f"导出主题目录不能是链接：{d.name}")
         d.mkdir(exist_ok=True)
         dir_of[t.id] = d
 
     counts = {"topics": 0, "notes": 0, "attachments": 0, "missing": 0}
-    copied: set[str] = set()
-    notes = [n for n in lib.notes.values() if n.state != "trash"]
-    for idx, n in enumerate(notes, 1):
+    aliases: dict[str, str] = {}
+    existing_attachments = digest_index(att_dir)
+    source_aliases = digest_index(lib.attachments_dir).aliases
+    for idx, (n, content) in enumerate(_export_notes(lib, source_aliases, include_trash=False), 1):
         d = dir_of.get(n.topic_id)
         if d is None:
             d = out / "（未分类）"
+            if d.is_symlink():
+                raise OSError("未分类目录不能是链接")
             d.mkdir(exist_ok=True)
             dir_of[n.topic_id] = d
-        content = lib.content(n.id)
         title = n.display_title(content, "")
         name = safe_name(title, "未命名")
-        target = d / f"{name}.md"
-        if target.exists():
-            target = d / f"{name}-{short_id(n.id)}.md"
         body = _md_body(n, content)
         head = (
             "---\n"
@@ -374,38 +432,36 @@ def export_markdown_tree(lib: Library, out: str | Path, progress=None) -> dict:
             "---\n\n"
         )
         # 先把图片搬过去（同名不同内容会加后缀），再把正文里的引用换成实际文件名
-        att_map: dict[str, str] = {}
         for rel in re.findall(r"\]\(\.\./attachments/([^)\s]+)\)", body):
-            if rel in att_map:
+            if rel in aliases:
                 continue
-            base_name = Path(rel).name
             src = lib.attachment_abspath(rel)
             if not src or not src.exists():
-                # 原始数据里就没有这张图：保留引用但记一笔，别让用户以为导出坏了
-                att_map[rel] = base_name
+                aliases[rel] = Path(rel).name
                 counts["missing"] += 1
                 continue
-            name, k = base_name, 2
-            dst = att_dir / name
-            while dst.exists():
-                name = f"{Path(rel).stem}-{k}{Path(rel).suffix}"
-                dst = att_dir / name
-                k += 1
-            try:
-                shutil.copy2(src, dst)
-                att_map[rel] = name
+            canonical, added = copy_attachment(src, att_dir, existing_attachments)
+            aliases[rel] = canonical
+            if added:
+                created.append(att_dir / canonical)
                 counts["attachments"] += 1
-            except OSError:
-                att_map[rel] = base_name
-        for rel, name in att_map.items():
-            if name != Path(rel).name:
-                body = body.replace(f"../attachments/{rel}", f"../attachments/{name}")
-
-        target.write_text(head + body.rstrip() + "\n", encoding="utf-8")
+        body = rewrite_links(body, aliases, "../")
+        result = (head + body.rstrip() + "\n").encode("utf-8")
+        target = d / f"{name}.md"
+        index = 1
+        while target.exists() or target.is_symlink():
+            if target.is_file() and not target.is_symlink() and target.read_bytes() == result:
+                break
+            suffix = f"-{short_id(n.id)}" if index == 1 else f"-{short_id(n.id)}-{index}"
+            target = d / f"{name}{suffix}.md"
+            index += 1
+        else:
+            with target.open("xb") as output:
+                created.append(target)
+                output.write(result)
         counts["notes"] += 1
-        copied.update(att_map)
         if progress and idx % 50 == 0:
-            progress(idx, len(notes))
+            progress(idx, len(lib.notes))
 
     counts["topics"] = len(dir_of)
     readme = (
@@ -421,5 +477,22 @@ def export_markdown_tree(lib: Library, out: str | Path, progress=None) -> dict:
         "每个主题一个文件夹，笔记是带 YAML 头的 .md 文件，图片在 `attachments/` 里用相对路径引用。\n"
         "回收站里的内容没有导出。\n"
     )
-    (out / "README.md").write_text(readme, encoding="utf-8")
+    target = out / "README.md"
+    number = 1
+    while target.exists() or target.is_symlink():
+        if target.is_file() and not target.is_symlink():
+            with target.open("rb") as existing:
+                marker = "# 寒淋笔记 导出".encode("utf-8")
+                if existing.read(len(marker)) == marker:
+                    break
+        suffix = "" if number == 1 else f"-{number}"
+        target = out / f"HanLin-Export{suffix}.md"
+        number += 1
+    with tempfile.NamedTemporaryFile(dir=out, suffix=".md", delete=False) as handle:
+        temp = Path(handle.name)
+    try:
+        temp.write_text(readme, encoding="utf-8")
+        os.replace(temp, target)
+    finally:
+        temp.unlink(missing_ok=True)
     return counts

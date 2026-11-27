@@ -30,7 +30,8 @@ l2 = a.add_note(t.id, "link", content="说明")
 a.notes[l1.id].url = "https://a.example"
 a.notes[l2.id].url = "https://b.example"
 a.save()
-zip_path, _ = export_zip(a, "worklib_dd_a/out.zip")
+zip_path, _ = export_zip(a, "worklib_dd_a/out.zip", dedupe=False)
+clean_zip, clean_counts = export_zip(a, "worklib_dd_a/clean.zip")
 
 ok = total = 0
 
@@ -43,6 +44,7 @@ def check(name, cond):
 
 
 # 1. 替换导入：包内重复只留一条
+check("默认导出已经去重", clean_counts["documents"] == 6)
 b = Library("worklib_dd_b").load()
 r = import_export(zip_path, b, mode="replace")
 same = [n for n in b.notes.values() if b.content(n.id) == "一模一样的内容"]

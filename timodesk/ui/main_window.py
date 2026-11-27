@@ -1619,6 +1619,13 @@ class MainWindow(QMainWindow):
         if not topic_id:
             topics = self.lib.sorted_topics()
             topic_id = topics[0].id if topics else self.lib.add_topic("我的笔记").id
+        from ..store import note_fingerprint
+        candidate = Note(id="", topic_id=topic_id, type="article" if title else "note", title=title or stem)
+        fingerprint = note_fingerprint(candidate, body)
+        if any(note_fingerprint(item, self.lib.content(item.id)) == fingerprint
+               for item in self.lib.notes.values() if item.type == candidate.type and item.title == candidate.title):
+            self._toast("已有相同的笔记，已跳过重复导入。")
+            return
         if title:
             note = self.lib.add_note(topic_id, "article", content=body, title=title)
         else:
@@ -1630,7 +1637,18 @@ class MainWindow(QMainWindow):
         self._toast(f"已导入「{note.display_title(self.lib.content(note.id))}」")
 
     def _do_import(self, path: str):
-        self.save_now()
+        if self.autosync.running():
+            self._toast("后台同步正在运行，请稍后再导入。")
+            return
+        if not self.save_now():
+            return
+        self.autosync.pause()
+        try:
+            self._import_package(path)
+        finally:
+            self.autosync.resume()
+
+    def _import_package(self, path: str):
         mode = "replace"
         if self.lib.notes:
             from .dialogs import ImportModeDialog
@@ -1640,6 +1658,7 @@ class MainWindow(QMainWindow):
                 return
             mode = pick.mode
         dlg = ProgressDialog(self, "导入笔记包", "正在导入…")
+        dlg.setWindowModality(Qt.WindowModal)
         dlg.show()
         QApplication.processEvents()
 
@@ -1653,25 +1672,24 @@ class MainWindow(QMainWindow):
         try:
             backup = self._backup_current() if mode == "replace" else None
             report = import_export(path, self.lib, progress=progress, mode=mode)
-            self.lib.save()
         except ImportCanceled:
             dlg.close()
-            restored = self._restore_from_backup(backup) if backup else False
-            if restored:
-                info(self, "已取消", "导入已取消，数据已还原成导入前的样子。")
-            else:
-                info(self, "已取消", "导入已取消。")
+            info(self, "已取消", "导入已取消，原数据已保留。")
             return
         except Exception as e:  # noqa: BLE001
             dlg.close()
             error(self, "导入失败", f"{e}")
             return
         dlg.close()
+        self.editor.set_note(None)
+        self.undo_stack = UndoStack(self.lib)
         self.refresh_topics()
         self.select_nav("all")
         msg = report.summary().split("\n")[0] + "。"
         if report.skipped:
             msg += f"\n跳过已存在的笔记 {report.skipped} 条。"
+        if report.deduped:
+            msg += f"\n跳过内容重复的笔记 {report.deduped} 条。"
         if report.missing_attachments:
             msg += f"\n有 {len(report.missing_attachments)} 个附件缺失。"
         if report.warnings:

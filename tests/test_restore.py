@@ -63,8 +63,9 @@ except ImportCanceled:
     canceled = True
 check("中途取消抛出", canceled)
 
-# 3. 此时库已被清空/部分写入
-check("库已被改动", len(lib.notes) != 5)
+# 3. 取消后库与索引都保持原状
+check("内存库保持原样", len(lib.notes) == 5)
+check("磁盘库保持原样", len(Library(lib.root).load().notes) == 5)
 
 # 4. 回滚
 restored = win._restore_from_backup(bdir)

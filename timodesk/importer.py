@@ -6,12 +6,15 @@ import json
 import os
 import re
 import shutil
+import stat
 import tempfile
 import zipfile
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .store import Library, Note, Topic, TYPE_CODE, now_iso
+from .transfer import ATTACHMENT_LINK, copy_attachment, digest_index, file_digest, rewrite_links, rewrite_note
 
 IMG_RE = re.compile(r"!\[([^\]]*)\]\((?:\.\./)+attachments/([^)\s]+)\)")
 
@@ -44,11 +47,13 @@ class ImportReport:
         return s
 
 
-def _dedupe_key(note: Note, content: str) -> str:
+def _dedupe_key(note: Note, content: str) -> tuple:
     """「是不是同一条笔记」的指纹，与「查找重复笔记」共用一套口径。"""
     from .store import note_fingerprint
 
-    return note_fingerprint(note, content)
+    if note.type == "article":
+        content = _strip_leading_title(content, note.title)
+    return note_fingerprint(note, content), note.color, note.remind_at, bool(note.pinned_at)
 
 
 def _fix_zip_name(info: zipfile.ZipInfo) -> str:
@@ -75,26 +80,39 @@ def extract_export(src: str | os.PathLike, dst: str | os.PathLike) -> Path:
         return src
     dst.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(src) as z:
+        if sum(info.file_size for info in z.infolist()) > shutil.disk_usage(dst).free:
+            raise OSError("暂存目录空间不足，无法完整解压笔记包")
+        names = set()
         for info in z.infolist():
+            name = _fix_zip_name(info).replace("\\", "/")
+            if info.is_dir():
+                name = name.removesuffix("/")
+            rel = _safe_relative(name)
+            key = name.casefold()
+            if key in names or stat.S_ISLNK(info.external_attr >> 16):
+                raise ValueError(f"笔记包含重复路径或链接：{name}")
+            names.add(key)
             if info.is_dir():
                 continue
-            name = _fix_zip_name(info).replace("\\", "/")
-            # 防 zip 路径穿越
-            name = "/".join(p for p in name.split("/") if p not in ("", ".", ".."))
-            if not name:
-                continue
-            out = dst / name
+            out = dst / rel
             out.parent.mkdir(parents=True, exist_ok=True)
-            with z.open(info) as fh, open(out, "wb") as w:
+            with z.open(info) as fh, open(out, "xb") as w:
                 shutil.copyfileobj(fh, w)
     return dst
 
 
+def _safe_relative(name: str) -> Path:
+    parts = name.split("/")
+    for part in parts:
+        if (not part or part in (".", "..") or part.endswith((" ", "."))
+                or re.search(r'[\\:<>|?*"\x00-\x1f]', part)
+                or re.fullmatch(r"(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])", part.split(".")[0])):
+            raise ValueError(f"笔记包含无效路径：{name}")
+    return Path(*parts)
+
+
 def _read_text(p: Path) -> str:
-    try:
-        return p.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return p.read_text(encoding="utf-8", errors="replace")
+    return p.read_text(encoding="utf-8-sig")
 
 
 def _norm_newlines(s: str) -> str:
@@ -131,11 +149,59 @@ def _load_account_passwords(root: Path) -> dict[str, dict]:
 
 def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str = "replace",
                   dedupe: bool = True) -> ImportReport:
-    """导入笔记包。
+    """Validate and prepare the complete result before touching the active library."""
+    if mode not in ("merge", "replace"):
+        raise ValueError("无效的导入模式")
+    lib.root.parent.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix=".hanlin-import-", dir=lib.root.parent))
+    clean = True
+    try:
+        base_index = lib.json_path.read_bytes() if lib.json_path.is_file() else None
+        staged = Library(work / "new").load()
+        if mode == "merge":
+            staged.topics, staged.notes = deepcopy((lib.topics, lib.notes))
+            staged._content = lib._content.copy()
+            if lib.notes_dir.exists():
+                shutil.copytree(lib.notes_dir, staged.notes_dir, dirs_exist_ok=True)
+        if lib.attachments_dir.exists():
+            shutil.copytree(lib.attachments_dir, staged.attachments_dir, dirs_exist_ok=True)
+        report = _prepare_import(src, staged, progress, mode, dedupe)
+        current_index = lib.json_path.read_bytes() if lib.json_path.is_file() else None
+        if current_index != base_index:
+            raise ValueError("笔记库在导入期间发生改动，请重新导入。")
+        if mode == "merge" and not report.notes and not report.attachments and staged.topics == lib.topics:
+            return report
+        lib.root.mkdir(parents=True, exist_ok=True)
+        old = work / "original"
+        old.mkdir()
+        moved, applied = [], []
+        try:
+            for name in ("notes", "attachments", "library.json"):
+                target = lib.root / name
+                if target.exists():
+                    os.replace(target, old / name)
+                    moved.append(name)
+                os.replace(staged.root / name, target)
+                applied.append(name)
+        except BaseException:
+            try:
+                for name in reversed(applied):
+                    os.replace(lib.root / name, staged.root / name)
+                for name in reversed(moved):
+                    os.replace(old / name, lib.root / name)
+            except OSError as error:
+                clean = False
+                raise OSError(f"导入回滚失败，原文件保留于 {old}") from error
+            raise
+        lib.topics, lib.notes, lib._content = staged.topics, staged.notes, staged._content
+        lib._saved_signature = staged._saved_signature
+        return report
+    finally:
+        if clean:
+            shutil.rmtree(work, ignore_errors=True)
 
-    mode="replace"：清空现有内容后整体替换。
-    mode="merge"：保留现有笔记，只添加包里没有的新笔记（同 id 跳过）。
-    """
+
+def _prepare_import(src, lib, progress, mode, dedupe) -> ImportReport:
     report = ImportReport(mode=mode)
     tmp = None
     try:
@@ -143,22 +209,35 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
         if src_path.is_dir():
             root = src_path
         else:
-            tmp = tempfile.mkdtemp(prefix="hanlin_import_")
+            tmp = tempfile.mkdtemp(prefix="package-", dir=lib.root.parent)
             root = extract_export(src_path, tmp)
 
         data_dir = root / "data"
+        for path in (data_dir / "topics.json", data_dir / "documents.json",
+                     root / "manifest.json", root / "content" / "accounts.csv", root / "attachments"):
+            if not path.resolve().is_relative_to(root.resolve()):
+                raise ValueError("笔记包含有指向包外的路径")
+        if not (data_dir / "documents.json").is_file():
+            raise ValueError("笔记包缺少 data/documents.json")
         topics_raw = json.loads(_read_text(data_dir / "topics.json")) if (data_dir / "topics.json").exists() else {}
-        docs_raw = json.loads(_read_text(data_dir / "documents.json")) if (data_dir / "documents.json").exists() else {}
+        docs_raw = json.loads((data_dir / "documents.json").read_text(encoding="utf-8-sig"))
+        if not isinstance(docs_raw.get("documents"), list):
+            raise ValueError("笔记包的 documents 索引无效")
         manifest = json.loads(_read_text(root / "manifest.json")) if (root / "manifest.json").exists() else {}
+        if manifest.get("status") in ("partial", "incomplete"):
+            raise ValueError("笔记包标记为不完整")
         passwords = _load_account_passwords(root)
 
         merge = mode == "merge"
         # 内容指纹：替换导入只比对包内，合并导入还要跟库里已有的笔记比。
         # 回收站里的也算（否则「两条都在回收站」时会给其中一条再造一份）。
-        seen: set[str] = set()
+        seen = set()
+        attachment_digests = digest_index(lib.attachments_dir)
+        existing_aliases = attachment_digests.aliases
         if dedupe and merge:
             for existing in lib.notes.values():
-                seen.add(_dedupe_key(existing, lib.content(existing.id)))
+                seen.add(_dedupe_key(rewrite_note(existing, existing_aliases),
+                                     rewrite_links(lib.content(existing.id), existing_aliases)))
         base_order = max((t.order for t in lib.topics.values()), default=-1.0) + 1 if merge else 0.0
         if not merge:
             # 清空目标库
@@ -172,7 +251,13 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
 
         # 1) 主题
         topic_list = topics_raw.get("topics", [])
+        topic_records = {}
         for i, t in enumerate(topic_list):
+            if t["id"] in topic_records:
+                if topic_records[t["id"]] != t:
+                    raise ValueError("笔记包含重复且内容不同的主题标识")
+                continue
+            topic_records[t["id"]] = t
             if merge and t["id"] in lib.topics:
                 continue
             name = t.get("name") or "未命名主题"
@@ -201,38 +286,47 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
 
         # 2) 附件：uri → 应用内相对路径
         uri_map: dict[str, str] = {}
+        aliases: dict[str, str] = {}
         att_src = root / "attachments"
+        entries = manifest.get("attachments", [])
+        for entry in entries:
+            if entry.get("sha256"):
+                relative = _safe_relative(entry["path"])
+                if len(relative.parts) != 2 or relative.parts[0] != "attachments":
+                    raise ValueError("附件清单路径无效")
+                file = root / relative
+                if (file.is_symlink() or not file.is_file() or file.stat().st_size != entry.get("size")
+                        or file_digest(file) != entry["sha256"]):
+                    raise ValueError(f"附件校验失败：{file.name}")
         if att_src.exists():
-            for f in att_src.iterdir():
+            for f in sorted(att_src.iterdir()):
                 if not f.is_file():
                     continue
-                dst = lib.attachment_path(f.name)
-                if merge and dst.exists():
-                    continue
-                shutil.copy2(f, dst)
-                report.attachments += 1
-        for a in manifest.get("attachments", []):
+                if f.is_symlink():
+                    raise ValueError(f"笔记包含附件链接：{f.name}")
+                name, copied = copy_attachment(f, lib.attachments_dir, attachment_digests)
+                aliases[f.name] = name
+                report.attachments += int(copied)
+        for a in entries:
             if a.get("uri") and a.get("path"):
-                uri_map[a["uri"]] = f"attachments/{Path(a['path']).name}"
+                name = Path(a["path"]).name
+                uri_map[a["uri"]] = f"attachments/{aliases.get(name, name)}"
 
-        def rewrite_md(text: str) -> tuple[str, int]:
+        def rewrite_md(text: str) -> str:
             """把 md 里的 ../../../attachments/x 改成 attachments/x。"""
-            missing = 0
-
-            def repl(m: re.Match) -> str:
-                nonlocal missing
-                alt, name = m.group(1), m.group(2)
+            new = rewrite_links(text, aliases)
+            for match in ATTACHMENT_LINK.finditer(new):
+                name = match[2]
+                if len(_safe_relative(name).parts) != 1:
+                    raise ValueError("笔记包含无效的附件路径")
                 if not lib.attachment_path(name).exists():
-                    missing += 1
                     report.missing_attachments.append(name)
-                return f"![{alt}](attachments/{name})"
-
-            new = IMG_RE.sub(repl, text)
-            return new, missing
+            return new
 
         # 3) 逐条笔记
         docs = docs_raw.get("documents", [])
         total = len(docs)
+        note_ids = {nid.casefold(): nid for nid in lib.notes}
         for idx, d in enumerate(docs):
             raw = d.get("raw") or {}
             ntype = d.get("type") or "note"
@@ -248,7 +342,9 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
             date_info = None
 
             rp = d.get("readablePath") or ""
-            md_path = root / rp if rp else None
+            md_path = root / _safe_relative(rp.replace("\\", "/")) if rp else None
+            if md_path and not md_path.resolve().is_relative_to(root.resolve()):
+                raise ValueError("笔记包含有指向包外的正文路径")
             md_text = _read_text(md_path) if md_path and md_path.exists() else ""
 
             try:
@@ -274,11 +370,11 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
                     elif u.startswith("timo://"):
                         report.missing_attachments.append(f"{u}（无映射）")
                     else:
-                        images.append(u)
+                        images.append(f"attachments/{aliases.get(u[12:], u[12:])}" if u.startswith("attachments/") else u)
                 description = _norm_newlines(raw.get("content") or "")
                 # 可读 md 里的图片引用也一并收集（兜底）
                 for m in IMG_RE.finditer(md_text):
-                    rel = f"attachments/{m.group(2)}"
+                    rel = f"attachments/{aliases.get(m.group(2), m.group(2))}"
                     if rel not in images:
                         images.append(rel)
                 content = ""
@@ -293,20 +389,17 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
                 }
                 description = _norm_newlines(raw.get("content") or "")
             elif ntype == "article":
-                content = _strip_leading_title(raw.get("content") or "", title)
-                content, _ = rewrite_md(content)
+                content = _strip_leading_title(raw.get("content", md_text) or "", title)
             else:  # note
                 content = _norm_newlines(raw.get("content") or "")
                 if not content and md_text:
                     content = _norm_newlines(md_text)
-                content, _ = rewrite_md(content)
+            content = rewrite_md(content)
+            description = rewrite_md(description)
 
             nid = d.get("id") or lib.new_id()
-            if merge and nid in lib.notes:
-                report.skipped += 1
-                if progress and (idx % 25 == 0 or idx == total - 1):
-                    progress(idx + 1, total)
-                continue
+            if len(_safe_relative(nid).parts) != 1:
+                raise ValueError(f"无效的笔记标识：{nid}")
             note = Note(
                 id=nid,
                 topic_id=d.get("topicId") or "",
@@ -319,23 +412,34 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
                 deleted_at=d.get("deletedAt"),
                 archived_at=d.get("archivedAt"),
                 pinned_at=d.get("pinnedAt"),
+                remind_at=d.get("remindAt"),
                 url=url,
                 description=description,
-                images=images,
+                images=list(dict.fromkeys(images)),
                 account=account,
                 password=password,
                 remark=remark,
                 date=date_info,
                 order=float(idx),
             )
+            key = _dedupe_key(note, content)
+            existing = lib.notes.get(note_ids.get(nid.casefold()))
+            if existing and _dedupe_key(rewrite_note(existing, existing_aliases),
+                                        rewrite_links(lib.content(existing.id), existing_aliases)) == key:
+                report.skipped += 1
+                if progress and (idx % 25 == 0 or idx == total - 1):
+                    progress(idx + 1, total)
+                continue
             if dedupe:
-                key = _dedupe_key(note, content)
                 if key in seen:
                     report.deduped += 1
                     if progress and (idx % 25 == 0 or idx == total - 1):
                         progress(idx + 1, total)
                     continue
                 seen.add(key)
+            if existing:
+                note.id = lib.new_id()
+                report.warnings.append("同一笔记标识已有不同内容，保留为单独的笔记。")
             # 主题不存在时挂到一个占位主题，避免丢数据
             if note.topic_id not in lib.topics:
                 placeholder = "00000000-0000-0000-0000-000000000000"
@@ -345,6 +449,7 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
                     )
                 note.topic_id = placeholder
             lib.notes[note.id] = note
+            note_ids[note.id.casefold()] = note.id
             lib._content[note.id] = content
             p = lib.note_path(note.id)
             p.write_text(content, encoding="utf-8", newline="\n")
@@ -352,6 +457,8 @@ def import_export(src: str | os.PathLike, lib: Library, progress=None, mode: str
             if progress and (idx % 25 == 0 or idx == total - 1):
                 progress(idx + 1, total)
 
+        if progress and not total:
+            progress(0, 0)
         lib.save()
         return report
     finally:
