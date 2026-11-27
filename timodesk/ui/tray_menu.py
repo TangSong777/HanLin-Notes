@@ -12,6 +12,9 @@ from PyQt5.QtWidgets import QMenu
 from .motion import enabled as motion_enabled
 from .theme import C, is_dark
 
+_OUTER_RADIUS = 8
+_ITEM_RADIUS = 5
+_BORDER_WIDTH = 1
 
 # Coordinates and strokes match Ui.GlyphGeometry in HanLin-ToDo.
 _PATHS = {
@@ -119,9 +122,12 @@ class TrayMenu(QMenu):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setFont(self.font())
-        painter.setPen(QPen(edge, 1))
+        painter.setPen(QPen(edge, _BORDER_WIDTH))
         painter.setBrush(surface)
-        painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
+        inset = _BORDER_WIDTH / 2
+        outline_radius = _OUTER_RADIUS - inset
+        painter.drawRoundedRect(QRectF(self.rect()).adjusted(inset, inset, -inset, -inset),
+                                outline_radius, outline_radius)
         for action in self.actions():
             if not action.isVisible():
                 continue
@@ -135,7 +141,7 @@ class TrayMenu(QMenu):
             if selected:
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(press if action == self.pressed else hover)
-                painter.drawRoundedRect(rect.adjusted(2, 1, -2, -1), 5, 5)
+                painter.drawRoundedRect(rect.adjusted(2, 1, -2, -1), _ITEM_RADIUS, _ITEM_RADIUS)
             name = action.data()
             text_color = muted if not action.isEnabled() else alert if name == "exit" else ink
             icon_color = alert if name == "exit" else muted
